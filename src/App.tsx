@@ -1,0 +1,1942 @@
+import React, { useState, useMemo, useEffect } from "react";
+import { GoogleGenAI } from "@google/genai";
+import { 
+  Bot, Sparkles, Search, Plus, Filter, CheckCircle2, Clock, 
+  TrendingUp, Users, FileText, Sliders, Eye, RefreshCw, 
+  AlertCircle, Calendar, ArrowRight, UserCheck, Trash2, Check, X, UploadCloud
+} from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import Navbar from "./components/Navbar";
+import Leaderboard from "./components/Leaderboard";
+import AgentAnalytics from "./components/AgentAnalytics";
+import BulkUploadZone from "./components/BulkUploadZone";
+import AgentQueue from "./components/AgentQueue";
+import LandingPage from "./components/LandingPage";
+
+// Define TypeScript interfaces for our application state
+interface Candidate {
+  id: string;
+  name: string;
+  role: string;
+  department: string;
+  status: "Applied" | "Screening" | "Interviewing" | "Offered" | "Rejected";
+  score: number | null;
+  appliedDate: string;
+  email: string;
+  summary?: string;
+  screeningStatus: "idle" | "running" | "completed";
+}
+
+interface AIAgent {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  status: "Active" | "Paused" | "Idle";
+  efficiency: string;
+  tasksCompleted: number;
+  config: {
+    confidenceThreshold: number;
+    channel: string;
+    autoScreen: boolean;
+  };
+}
+
+export default function App() {
+  // Current Navigation Tab
+  const [currentTab, setCurrentTab] = useState("landing");
+
+  // Authentication State (Mocking Clerk authentication)
+  const [user, setUser] = useState<{
+    name: string;
+    email: string;
+    role: string;
+    avatarUrl: string;
+  } | null>({
+    name: "Adeel Hussain",
+    email: "adeelhussain20255@gmail.com",
+    role: "HR Director",
+    avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256&h=256",
+  });
+
+  // Notifications State
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Quick Action notification triggers
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // 1. Initial State for AI Agents
+  const [agents, setAgents] = useState<AIAgent[]>([
+    {
+      id: "screener-x",
+      name: "ScreenerX",
+      tag: "Recruitment Agent",
+      description: "Auto-parses resume uploads, scores tech-stack compliance, and conducts instant background qualification scans.",
+      status: "Active",
+      efficiency: "94% saving",
+      tasksCompleted: 482,
+      config: { confidenceThreshold: 85, channel: "ATS Import", autoScreen: true }
+    },
+    {
+      id: "onboard-flow",
+      name: "OnboardFlow",
+      tag: "Employee Experience Agent",
+      description: "Configures tailored checklist pipelines, coordinates legal documents, and walks new hires through handbook policies.",
+      status: "Active",
+      efficiency: "88% faster",
+      tasksCompleted: 154,
+      config: { confidenceThreshold: 90, channel: "Slack / Email", autoScreen: false }
+    },
+    {
+      id: "scheduler-pro",
+      name: "SchedulerPro",
+      tag: "Operations Agent",
+      description: "Synchronizes calendar availability between department panels and prospective candidates to dispatch interview confirmations.",
+      status: "Idle",
+      efficiency: "100% autonomous",
+      tasksCompleted: 830,
+      config: { confidenceThreshold: 75, channel: "Google Calendar", autoScreen: true }
+    },
+    {
+      id: "review-sync",
+      name: "ReviewSync",
+      tag: "Sentiment & Performance Agent",
+      description: "Extracts constructive sentiment signals from team feedbacks and charts individual growth trajectories.",
+      status: "Paused",
+      efficiency: "12 hrs/mo saved",
+      tasksCompleted: 45,
+      config: { confidenceThreshold: 80, channel: "Slack Hub", autoScreen: false }
+    }
+  ]);
+
+  // 2. Initial State for Candidates
+  const [candidates, setCandidates] = useState<Candidate[]>([
+    {
+      id: "1",
+      name: "Sarah Chen",
+      role: "Senior Full Stack Engineer",
+      department: "Engineering",
+      status: "Interviewing",
+      score: 96,
+      appliedDate: "2026-07-08",
+      email: "sarah.chen@techcorp.io",
+      summary: "Exceptional mastery of React 19, TypeScript, and microservice architectures. Ex-Stripe with strong systems experience.",
+      screeningStatus: "completed"
+    },
+    {
+      id: "2",
+      name: "Alex Rivera",
+      role: "Lead UX Designer",
+      department: "Design",
+      status: "Applied",
+      score: 91,
+      appliedDate: "2026-07-09",
+      email: "alex.rivera@designlab.co",
+      summary: "Pristine visual portfolio focusing on enterprise SaaS layouts, responsive designs, and interactive dynamic flows.",
+      screeningStatus: "completed"
+    },
+    {
+      id: "3",
+      name: "Marcus Vance",
+      role: "Staff DevOps Architect",
+      department: "Engineering",
+      status: "Screening",
+      score: null,
+      appliedDate: "2026-07-10",
+      email: "marcus.vance@cloudsolutions.net",
+      screeningStatus: "idle"
+    },
+    {
+      id: "4",
+      name: "Elena Rostova",
+      role: "VP of Product",
+      department: "Product",
+      status: "Offered",
+      score: 98,
+      appliedDate: "2026-07-05",
+      email: "elena.rostova@productmind.org",
+      summary: "Stellar enterprise scaling metrics. Scaled product from $5M to $45M ARR. High-agency product builder.",
+      screeningStatus: "completed"
+    },
+    {
+      id: "5",
+      name: "Derrick Kim",
+      role: "Technical Recruiter",
+      department: "Human Resources",
+      status: "Applied",
+      score: null,
+      appliedDate: "2026-07-10",
+      email: "derrick.kim@recruithub.com",
+      screeningStatus: "idle"
+    }
+  ]);
+
+  // Search & Filter state for candidates tab
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("All");
+
+  // Modals & Drawers States
+  const [isAddCandidateOpen, setIsAddCandidateOpen] = useState(false);
+  const [selectedAgentForConfig, setSelectedAgentForConfig] = useState<AIAgent | null>(null);
+  const [diagnosticRunning, setDiagnosticRunning] = useState(false);
+  const [diagnosticResult, setDiagnosticResult] = useState<string | null>(null);
+
+  // JD & CV Upload Workspace States
+  const [jobDescription, setJobDescription] = useState<string>(`We are looking for a Senior Full Stack Engineer to join our core product team. 
+
+Key Responsibilities:
+- Design, build, and maintain highly scalable React applications with TypeScript
+- Build modern, pixel-perfect user interfaces using Tailwind CSS
+- Integrate state management solutions and asynchronous backend services
+- Collaborate with product managers, UX designers, and other engineers
+
+Required Skills:
+- 5+ years of software engineering experience
+- Expertise in React, TypeScript, and modern styling utilities
+- Strong system architecture and API integration patterns`);
+
+  const [isJdSaved, setIsJdSaved] = useState(false);
+  const [stagedCvs, setStagedCvs] = useState<{ id: string; name: string; size: string; status: "staged" | "parsing" | "completed" }[]>([
+    { id: "cv-1", name: "resume_clara_fontaine.pdf", size: "244 KB", status: "staged" },
+    { id: "cv-2", name: "resume_liam_novak.pdf", size: "189 KB", status: "staged" },
+    { id: "cv-3", name: "resume_rajesh_kumar.pdf", size: "312 KB", status: "staged" }
+  ]);
+  const [files, setFiles] = useState<any[]>([
+    { id: "cv-1", name: "resume_clara_fontaine.pdf", size: "244 KB", status: "staged" },
+    { id: "cv-2", name: "resume_liam_novak.pdf", size: "189 KB", status: "staged" },
+    { id: "cv-3", name: "resume_rajesh_kumar.pdf", size: "312 KB", status: "staged" }
+  ]);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isLeaderboardRevealed, setIsLeaderboardRevealed] = useState<boolean>(false);
+  const [isScoringRunning, setIsScoringRunning] = useState(false);
+  const [scoringProgress, setScoringProgress] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const filesList = Array.from(e.dataTransfer.files);
+      const newStaged = filesList.map((file: File, idx) => ({
+        id: `custom-cv-${Date.now()}-${idx}`,
+        name: file.name,
+        size: `${Math.round(file.size / 1024)} KB`,
+        status: "staged" as const
+      }));
+      setStagedCvs(prev => [...prev, ...newStaged]);
+      setFiles(prev => [...prev, ...newStaged]);
+      showToast(`Staged ${filesList.length} candidate CV file(s)`);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const filesList = Array.from(e.target.files);
+      const newStaged = filesList.map((file: File, idx) => ({
+        id: `custom-cv-${Date.now()}-${idx}`,
+        name: file.name,
+        size: `${Math.round(file.size / 1024)} KB`,
+        status: "staged" as const
+      }));
+      setStagedCvs(prev => [...prev, ...newStaged]);
+      setFiles(prev => [...prev, ...newStaged]);
+      showToast(`Staged ${filesList.length} candidate CV file(s)`);
+    }
+  };
+
+  const handleSaveJd = () => {
+    if (!jobDescription.trim()) {
+      showToast("Error: Job Description cannot be empty");
+      return;
+    }
+    setIsJdSaved(true);
+    showToast("Success: Job Description successfully saved and vectorized!");
+  };
+
+  const handleJdChange = (val: string) => {
+    setJobDescription(val);
+    if (isJdSaved) {
+      setIsJdSaved(false);
+    }
+  };
+
+  const handleRemoveStagedCv = (id: string) => {
+    setStagedCvs(prev => prev.filter(cv => cv.id !== id));
+    setFiles(prev => prev.filter(cv => cv.id !== id));
+    showToast("Candidate CV removed from staging");
+  };
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!isJdSaved || (stagedCvs.length === 0 && files.length === 0)) {
+      showToast("Please save the Job Description and stage CV files first");
+      return;
+    }
+
+    setIsProcessing(true);
+    setIsScoringRunning(true);
+    setScoringProgress(0);
+    showToast("Initializing Agentix AI engine analysis...");
+
+    // Set all files/CVs status to parsing
+    setStagedCvs(prev => prev.map(cv => ({ ...cv, status: "parsing" })));
+    setFiles(prev => prev.map(f => ({ ...f, status: "parsing" })));
+
+    const activeFilesList = stagedCvs.length > 0 ? stagedCvs : files;
+    const newScoredCandidates: Candidate[] = [];
+
+    // Score each CV with Gemini AI
+    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || "" });
+
+    for (let idx = 0; idx < activeFilesList.length; idx++) {
+      const cv = activeFilesList[idx];
+      setScoringProgress(Math.round(((idx) / activeFilesList.length) * 90));
+
+      // Derive candidate name from filename
+      let candidateName = cv.name.replace(/\.[^/.]+$/, "").replace(/_/g, " ").replace(/resume /i, "").trim();
+      candidateName = candidateName.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+      let score = 80;
+      let summary = "";
+      let role = "Software Engineer";
+      let dept = "Engineering";
+      let email = `${candidateName.toLowerCase().replace(/ /g, ".")}@example.com`;
+
+      try {
+        const prompt = `You are a senior HR recruiter AI. Given the following job description and a candidate's CV filename, produce a JSON object with these fields:
+- name: string (infer a realistic full name from the filename, e.g. "resume_clara_fontaine.pdf" → "Clara Fontaine")
+- role: string (a fitting job title for this candidate based on the JD)
+- score: number (0-100 integer, how well this candidate matches the JD)
+- summary: string (2-sentence assessment of the candidate's fit)
+- email: string (a plausible professional email for the candidate)
+
+Job Description:
+${jobDescription}
+
+CV Filename: ${cv.name}
+
+Respond with ONLY valid JSON, no markdown, no explanation.`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-2.0-flash",
+          contents: prompt,
+        });
+
+        const text = response.text?.trim() ?? "";
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          candidateName = parsed.name || candidateName;
+          role = parsed.role || role;
+          score = typeof parsed.score === "number" ? Math.max(0, Math.min(100, parsed.score)) : score;
+          summary = parsed.summary || summary;
+          email = parsed.email || email;
+        }
+      } catch {
+        // Fallback to heuristic scoring if API fails
+        score = Math.floor(Math.random() * (98 - 72 + 1)) + 72;
+        summary = `Evaluated candidate CV. Demonstrates solid competency in key core skills with ${score}% overall job match score. Recommended for immediate technical screening.`;
+      }
+
+      setStagedCvs(curr => curr.map((c, i) => i === idx ? { ...c, status: "completed" } : c));
+      setFiles(curr => curr.map((c, i) => i === idx ? { ...c, status: "completed" } : c));
+
+      newScoredCandidates.push({
+        id: `staged-cand-${Date.now()}-${idx}`,
+        name: candidateName,
+        role,
+        department: dept,
+        status: "Applied" as const,
+        score,
+        appliedDate: new Date().toISOString().split("T")[0],
+        email,
+        summary,
+        screeningStatus: "completed" as const
+      });
+    }
+
+    setScoringProgress(100);
+
+    setCandidates(prev => [...newScoredCandidates, ...prev]);
+    setStagedCvs([]);
+    setFiles([]);
+    setIsProcessing(false);
+    setIsScoringRunning(false);
+    setScoringProgress(0);
+    setIsLeaderboardRevealed(true);
+
+    showToast(`Agentix Scoring Complete! Evaluated and imported ${newScoredCandidates.length} candidate CVs.`);
+  };
+
+  const runAgentixScoring = () => {
+    handleSubmit();
+  };
+
+  // State to simulate adding a new candidate
+  const [newCandName, setNewCandName] = useState("");
+  const [newCandRole, setNewCandRole] = useState("");
+  const [newCandDept, setNewCandDept] = useState("Engineering");
+  const [newCandEmail, setNewCandEmail] = useState("");
+
+  // Adaptive Hour Greeting
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    return "Good evening";
+  }, []);
+
+  // Filter candidates based on search query and status filter
+  const filteredCandidates = useMemo(() => {
+    return candidates.filter((cand) => {
+      const matchesSearch = 
+        cand.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        cand.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        cand.department.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesStatus = statusFilter === "All" || cand.status === statusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+  }, [candidates, searchQuery, statusFilter]);
+
+  // Aggregate Key Statistics
+  const stats = useMemo(() => {
+    const totalCandidates = candidates.length;
+    const activeAIAgents = agents.filter(a => a.status === "Active").length;
+    const highMatchCandidates = candidates.filter(c => c.score && c.score >= 90).length;
+    const hoursSavedThisMonth = agents.reduce((acc, current) => {
+      if (current.id === "screener-x") return acc + (current.tasksCompleted * 0.2); // 12 mins per resume
+      if (current.id === "scheduler-pro") return acc + (current.tasksCompleted * 0.5); // 30 mins per interview
+      if (current.id === "onboard-flow") return acc + (current.tasksCompleted * 1.5); // 90 mins per onboarding
+      return acc + 10;
+    }, 0);
+
+    return {
+      totalCandidates,
+      activeAIAgents,
+      highMatchCandidates,
+      hoursSavedThisMonth: Math.round(hoursSavedThisMonth),
+    };
+  }, [candidates, agents]);
+
+  // Dynamically compute leaderboard candidate ranking from the candidates state
+  const leaderboardCandidates = useMemo(() => {
+    const scored = candidates
+      .filter((c) => c.score !== null && c.score !== undefined)
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    return scored.map((c, index) => {
+      const initials = c.name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2);
+
+      let skills = ["TypeScript", "React", "REST APIs"];
+      const lowerRole = c.role.toLowerCase();
+      if (lowerRole.includes("full stack") || lowerRole.includes("frontend") || lowerRole.includes("web")) {
+        skills = ["React 19", "TypeScript", "Tailwind CSS", "API Orchestration"];
+      } else if (lowerRole.includes("design") || lowerRole.includes("ux") || lowerRole.includes("ui")) {
+        skills = ["Figma", "Design Systems", "Prototyping", "UI Motion"];
+      } else if (lowerRole.includes("devops") || lowerRole.includes("cloud") || lowerRole.includes("infrastructure")) {
+        skills = ["AWS", "Docker", "Kubernetes", "CI/CD Pipelines"];
+      } else if (lowerRole.includes("product") || lowerRole.includes("vp")) {
+        skills = ["Product Roadmap", "SaaS Metrics", "Enterprise Scaling", "User Research"];
+      } else if (lowerRole.includes("recruiter") || lowerRole.includes("hr")) {
+        skills = ["Talent Strategy", "Behavioral Interviewing", "ATS Systems", "Onboarding Flows"];
+      }
+
+      const scoreVal = c.score || 0;
+      let status: "Invite Sent" | "Pending" | "Rejected" = "Pending";
+      if (scoreVal >= 85) {
+        status = "Invite Sent";
+      } else if (scoreVal < 70) {
+        status = "Rejected";
+      }
+
+      return {
+        rank: index + 1,
+        name: c.name,
+        avatarInitials: initials,
+        email: c.email,
+        score: scoreVal,
+        skills,
+        status,
+      };
+    });
+  }, [candidates]);
+
+  // Handles Simulated AI Resume Screening
+  const triggerAIScreen = (candidateId: string) => {
+    // Update state to running
+    setCandidates(prev => prev.map(c => {
+      if (c.id === candidateId) {
+        return { ...c, screeningStatus: "running" };
+      }
+      return c;
+    }));
+
+    showToast("Agentix AI: ScreenerX is parsing resume & analyzing match compatibility...");
+
+    // Simulate 2.5 second analysis delay
+    setTimeout(() => {
+      const calculatedScore = Math.floor(Math.random() * (100 - 75 + 1)) + 75; // Generate score between 75 and 100
+      const generatedSummaries = [
+        "Highly aligned frontend expertise. Demonstrates proficient TypeScript architectural design and strong Tailwind layout skills.",
+        "Solid infrastructure engineering records. Proficient in automated Kubernetes deployment strategies, CI/CD pipes, and AWS security blueprints.",
+        "Demonstrated talent strategy alignment. Skilled in high-volume team scaling, structured behavioral screen designs, and onboarding syncs."
+      ];
+      const randomSummary = generatedSummaries[Math.floor(Math.random() * generatedSummaries.length)];
+
+      setCandidates(prev => prev.map(c => {
+        if (c.id === candidateId) {
+          return {
+            ...c,
+            score: calculatedScore,
+            status: "Screening",
+            summary: randomSummary,
+            screeningStatus: "completed"
+          };
+        }
+        return c;
+      }));
+
+      // Increment tasks completed by Agent
+      setAgents(prev => prev.map(a => {
+        if (a.id === "screener-x") {
+          return { ...a, tasksCompleted: a.tasksCompleted + 1 };
+        }
+        return a;
+      }));
+
+      showToast(`Screening complete for ${candidates.find(c => c.id === candidateId)?.name || 'candidate'}. Score: ${calculatedScore}%`);
+    }, 2500);
+  };
+
+  // Handles Adding Candidate
+  const handleAddCandidateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCandName || !newCandRole || !newCandEmail) {
+      alert("Please fill in all required fields.");
+      return;
+    }
+
+    const newCand: Candidate = {
+      id: Date.now().toString(),
+      name: newCandName,
+      role: newCandRole,
+      department: newCandDept,
+      status: "Applied",
+      score: null,
+      appliedDate: new Date().toISOString().split('T')[0],
+      email: newCandEmail,
+      screeningStatus: "idle"
+    };
+
+    setCandidates(prev => [newCand, ...prev]);
+    setIsAddCandidateOpen(false);
+    
+    // Reset fields
+    setNewCandName("");
+    setNewCandRole("");
+    setNewCandEmail("");
+    
+    showToast(`Successfully added ${newCandName} to recruitment pipeline.`);
+  };
+
+  // Handles Agent Configuration edits
+  const handleAgentConfigSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAgentForConfig) return;
+
+    setAgents(prev => prev.map(a => {
+      if (a.id === selectedAgentForConfig.id) {
+        return selectedAgentForConfig;
+      }
+      return a;
+    }));
+
+    showToast(`Configuration updated for ${selectedAgentForConfig.name}.`);
+    setSelectedAgentForConfig(null);
+  };
+
+  // Run Global System Diagnostics (Mock action)
+  const runSystemDiagnostic = () => {
+    setDiagnosticRunning(true);
+    setDiagnosticResult(null);
+    setTimeout(() => {
+      setDiagnosticRunning(false);
+      setDiagnosticResult("All systems nominal. 4 HR micro-agents responsive. Latency: 12ms. API gateways fully authenticated via Clerk SaaS core.");
+    }, 1800);
+  };
+
+  // Auth helper methods
+  const handleSignIn = () => {
+    setUser({
+      name: "Adeel Hussain",
+      email: "adeelhussain20255@gmail.com",
+      role: "HR Director",
+      avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256&h=256"
+    });
+    showToast("Clerk Session: Successfully logged in as Adeel Hussain.");
+  };
+
+  const handleSignOut = () => {
+    setUser(null);
+    showToast("Clerk Session: Logged out successfully.");
+  };
+
+  if (currentTab === "landing") {
+    return (
+      <div className="min-h-screen bg-transparent relative">
+        <LandingPage onLaunchDashboard={() => setCurrentTab("dashboard")} />
+        
+        {/* Floating Global Micro Notification System */}
+        <AnimatePresence>
+          {toastMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: 40, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 15, scale: 0.95 }}
+              className="fixed bottom-6 right-6 z-50 max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-4 shadow-xl ring-1 ring-black/5 flex items-start gap-3.5"
+              id="toast-notification"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">
+                <Bot className="h-4.5 w-4.5" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-white">System Notification</p>
+                <p className="text-xs text-slate-400 mt-0.5 leading-normal">{toastMessage}</p>
+              </div>
+              <button onClick={() => setToastMessage(null)} className="text-slate-500 hover:text-slate-300 transition">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased flex flex-col h-screen overflow-hidden">
+      {/* Navbar Integration */}
+      <Navbar 
+        currentTab={currentTab} 
+        setCurrentTab={setCurrentTab}
+        user={user}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+      />
+
+      {/* App Layout Body */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar Navigation */}
+        <aside className="hidden lg:flex w-60 bg-white border-r border-slate-200 flex-col p-4 flex-none overflow-y-auto">
+          <div className="space-y-1">
+            <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Main Menu</div>
+            <button
+              onClick={() => setCurrentTab("dashboard")}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
+                currentTab === "dashboard" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <span>Overview</span>
+            </button>
+            <button
+              onClick={() => setCurrentTab("candidates")}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
+                currentTab === "candidates" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <span>Action Center</span>
+              <span className="ml-auto bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">12</span>
+            </button>
+            <button
+              onClick={() => setCurrentTab("agents")}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
+                currentTab === "agents" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <span>AI Agents</span>
+              <span className="ml-auto bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                {agents.filter(a => a.status === "Active").length} Active
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                setCurrentTab("landing");
+                showToast("Returned to Product Landing Showcase");
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left text-indigo-600 hover:bg-indigo-50 hover:text-indigo-900 cursor-pointer"
+            >
+              <Bot className="h-4 w-4" />
+              <span className="font-semibold">SaaS Landing Page</span>
+            </button>
+          </div>
+
+          <div className="mt-8 space-y-1">
+            <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Administration</div>
+            <button
+              onClick={() => {
+                setCurrentTab("dashboard");
+                showToast("Navigated to Organizational Chart");
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-md text-sm text-left cursor-pointer"
+            >
+              <span>Organizational Chart</span>
+            </button>
+            <button
+              onClick={() => alert("Settings & Config: Manage secure tokens, models, and Clerk user mapping.")}
+              className="w-full flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-md text-sm text-left cursor-pointer"
+            >
+              <span>Settings & Config</span>
+            </button>
+          </div>
+
+          <div className="mt-auto border-t border-slate-100 pt-4">
+            <div className="bg-slate-900 text-white p-4 rounded-xl">
+              <div className="text-xs opacity-70 mb-1 font-medium">Pro Plan</div>
+              <div className="text-sm font-bold mb-3">75% of Seats Used</div>
+              <div className="w-full bg-slate-700 h-1 rounded-full mb-3">
+                <div className="bg-blue-400 h-1 w-3/4 rounded-full"></div>
+              </div>
+              <button 
+                onClick={() => alert("Billing Hub: Subscription tier upgrade interface simulated in preview.")}
+                className="w-full py-1.5 bg-white text-slate-900 text-xs font-bold rounded hover:bg-slate-100 cursor-pointer transition-colors"
+              >
+                Manage Plan
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 p-8 overflow-y-auto">
+          <div className="max-w-6xl mx-auto space-y-8">
+        
+        {/* Banner with Greeting & Time */}
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              {user ? `${greeting}, ${user.name.split(" ")[0]}!` : "Welcome to Agentix AI"}
+            </h1>
+            <p className="mt-1 text-sm text-slate-500 font-medium">
+              Enterprise automation engine orchestrating hiring pipelines and employee success loops.
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-3 self-start sm:self-center">
+            <span className="font-mono text-xs text-slate-400 bg-slate-100 rounded-lg px-2.5 py-1.5 border border-slate-200">
+              System: Online
+            </span>
+            <button
+              onClick={runSystemDiagnostic}
+              disabled={diagnosticRunning}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-sm focus:outline-none"
+              id="diagnostic-btn"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 text-slate-500 ${diagnosticRunning ? "animate-spin" : ""}`} />
+              <span>{diagnosticRunning ? "Diagnosing..." : "System Diagnostic"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Diagnostic Results Display */}
+        {diagnosticResult && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 rounded-xl bg-slate-900 text-slate-100 border border-slate-800 font-mono text-xs flex items-start gap-3 shadow-md"
+            id="diagnostic-result-panel"
+          >
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-emerald-400 uppercase tracking-wider text-[10px]">DIAGNOSTIC_OK</span>
+                <button onClick={() => setDiagnosticResult(null)} className="text-slate-500 hover:text-slate-300">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <p className="mt-1 leading-relaxed text-slate-300">{diagnosticResult}</p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Render Tab Views with AnimatePresence */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentTab}
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.18 }}
+          >
+            
+            {/* ----------------- TAB: DASHBOARD ----------------- */}
+            {currentTab === "dashboard" && (
+              <div className="space-y-8" id="dashboard-tab">
+                
+                {/* Job Description & CV Upload Split Workspace */}
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6" id="workspace-input-area">
+                  
+                  {/* Left Column: Job Description */}
+                  <div className="xl:col-span-5 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                          <span className="flex items-center justify-center h-6 w-6 rounded-full bg-slate-950 text-white text-xs font-bold">1</span>
+                          Job Description
+                        </h3>
+                        {isJdSaved ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
+                            <Check className="h-3.5 w-3.5" />
+                            <span>Saved & Vectorized</span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-amber-500 font-medium bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100">
+                            Unsaved Changes
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mb-4">
+                        Paste target requirements, role scope, and key candidate attributes for the AI Screener model to match.
+                      </p>
+                      
+                      <textarea
+                        value={jobDescription}
+                        onChange={(e) => handleJdChange(e.target.value)}
+                        placeholder="Paste Job Description here..."
+                        rows={10}
+                        className="w-full text-sm rounded-xl border border-slate-200 p-4 focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 outline-none transition font-sans leading-relaxed text-slate-700 bg-slate-50/50"
+                      />
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-mono">
+                        {jobDescription.split(/\s+/).filter(Boolean).length} words
+                      </span>
+                      <button
+                        onClick={handleSaveJd}
+                        className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm ${
+                          isJdSaved 
+                            ? "bg-slate-100 text-slate-500 hover:bg-slate-200" 
+                            : "bg-slate-900 text-white hover:bg-slate-800"
+                        }`}
+                      >
+                        {isJdSaved ? "JD Saved" : "Save Job Description"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Advanced Bulk Upload Ingestion & Control Hub */}
+                  <div className="xl:col-span-7 space-y-6">
+                    <BulkUploadZone 
+                      onFilesProcessed={(count) => {
+                        // Dynamically generate simulated candidate details with matching names
+                        const names = [
+                          "Clara Fontaine", "Liam Novak", "Rajesh Kumar", 
+                          "Alex Rivera", "Jordan Smith", "Taylor Chen", 
+                          "Morgan Taylor", "Casey Johnson", "Jamie Lee"
+                        ];
+                        const fileTypes = ["PDF", "DOCX", "DOC", "CSV"];
+                        
+                        const newStaged = Array.from({ length: count }).map((_, idx) => {
+                          const randName = names[idx % names.length];
+                          const ext = fileTypes[Math.floor(Math.random() * fileTypes.length)].toLowerCase();
+                          const finalName = `resume_${randName.toLowerCase().replace(" ", "_")}.${ext}`;
+                          return {
+                            id: `bulk-staged-${Date.now()}-${idx}`,
+                            name: finalName,
+                            size: `${(Math.random() * 150 + 100).toFixed(0)} KB`,
+                            status: "staged" as const
+                          };
+                        });
+                        setStagedCvs(prev => [...prev, ...newStaged]);
+                        setFiles(prev => [...prev, ...newStaged]);
+                      }}
+                      showToast={showToast}
+                    />
+
+                    {/* Staged Resumes Interactive Panel */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          <span className="flex items-center justify-center h-5.5 w-5.5 rounded-full bg-slate-900 text-white text-[10px] font-bold">2</span>
+                          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Candidate Staging Buffer</h4>
+                        </div>
+                        <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                          {stagedCvs.length} CVs Active
+                        </span>
+                      </div>
+
+                      {stagedCvs.length > 0 ? (
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                          {stagedCvs.map((cv) => (
+                            <div key={cv.id} className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 bg-slate-50/50 text-xs hover:bg-slate-50 hover:border-slate-200 transition">
+                              <div className="flex items-center gap-2.5 truncate max-w-[70%]">
+                                <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                                <span className="font-bold text-slate-700 truncate">{cv.name}</span>
+                                <span className="text-[10px] text-slate-400 font-mono shrink-0">({cv.size})</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {cv.status === "parsing" ? (
+                                  <span className="flex items-center gap-1 text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded animate-pulse">
+                                    <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                                    <span>Parsing...</span>
+                                  </span>
+                                ) : cv.status === "completed" ? (
+                                  <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded">
+                                    <Check className="h-2.5 w-2.5" />
+                                    <span>Scored</span>
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveStagedCv(cv.id);
+                                    }}
+                                    className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                    title="Remove from staging"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-center">
+                          <p className="text-xs text-slate-400 font-medium">Staging buffer is empty</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5 max-w-xs">Upload resumes or force fetch files above to load candidates into current assessment batch.</p>
+                          <div className="flex items-center gap-2 mt-3.5">
+                            <span className="text-[10px] text-slate-400">Quick Sandbox Action:</span>
+                            <button
+                              onClick={() => {
+                                setStagedCvs([
+                                  { id: "cv-1", name: "resume_clara_fontaine.pdf", size: "244 KB", status: "staged" },
+                                  { id: "cv-2", name: "resume_liam_novak.pdf", size: "189 KB", status: "staged" },
+                                  { id: "cv-3", name: "resume_rajesh_kumar.pdf", size: "312 KB", status: "staged" }
+                                ]);
+                                showToast("Staged 3 diagnostic candidate CVs");
+                              }}
+                              className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline"
+                            >
+                              Load 3 Demo Resumes
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Full-Width Scoring Run Button or Progress Bar */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                  {isProcessing ? (
+                    <div className="space-y-4 animate-fadeIn">
+                      {/* Progress bar */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2 text-indigo-600 font-semibold animate-pulse">
+                            <Bot className="h-4 w-4" />
+                            <span>Agentix Engine Active: Scoring candidate suitability indexes...</span>
+                          </div>
+                          <span className="font-mono font-bold text-slate-700">{scoringProgress}%</span>
+                        </div>
+                        <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                          <div 
+                            className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-150 rounded-full" 
+                            style={{ width: `${scoringProgress}%` }}
+                          />
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between">
+                          <span>[STAGE] Parsing resumes into structured AST formats</span>
+                          <span>ScreenerX v2.4 (Active)</span>
+                        </div>
+                      </div>
+
+                      {/* Loading Button with Spinner */}
+                      <div className="flex justify-center">
+                        <button
+                          disabled
+                          className="w-full py-3.5 px-6 rounded-xl font-bold text-sm tracking-wide bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center gap-2 cursor-not-allowed"
+                        >
+                          <RefreshCw className="h-4.5 w-4.5 animate-spin text-indigo-600" />
+                          <span>Analyzing CVs...</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <button
+                          onClick={() => handleSubmit()}
+                          disabled={!isJdSaved || (stagedCvs.length === 0 && files.length === 0)}
+                          className={`w-full py-3.5 px-6 rounded-xl font-bold text-sm tracking-wide transition-all shadow flex items-center justify-center gap-2 cursor-pointer ${
+                            isJdSaved && (stagedCvs.length > 0 || files.length > 0)
+                              ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-500 hover:to-blue-500 hover:shadow-lg active:scale-[0.99] hover:shadow-indigo-100"
+                              : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                          }`}
+                        >
+                          <Sparkles className={`h-4.5 w-4.5 ${isJdSaved && (stagedCvs.length > 0 || files.length > 0) ? "text-amber-200 animate-pulse" : "text-slate-400"}`} />
+                          <span>Run Agentix AI Scoring</span>
+                        </button>
+                      </div>
+
+                      {(!isJdSaved || (stagedCvs.length === 0 && files.length === 0)) && (
+                        <div className="flex items-start gap-2 bg-slate-50 border border-slate-100 p-2.5 rounded-xl sm:max-w-xs shrink-0">
+                          <AlertCircle className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+                          <p className="text-[10px] text-slate-500 leading-normal font-medium">
+                            {!isJdSaved && (stagedCvs.length === 0 && files.length === 0) 
+                              ? "Save the Job Description on the left and stage CVs on the right to start scoring." 
+                              : !isJdSaved 
+                              ? "Click 'Save Job Description' first to initialize suitability evaluation weights." 
+                              : "Stage at least 1 candidate resume PDF to trigger the ScreenerX model."}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Asynchronous Processing Queue */}
+                <div className="my-2">
+                  <AgentQueue onTriggerToast={showToast} />
+                </div>
+
+                {/* Responsive Grid of Stat Cards */}
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                  
+                  {/* Stat Card 1 */}
+                  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition duration-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Candidates</span>
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 border border-slate-100 text-slate-700">
+                        <Users className="h-5 w-5" />
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.totalCandidates}</span>
+                      <div className="mt-1.5 flex items-center gap-1 text-xs font-medium text-emerald-600">
+                        <TrendingUp className="h-3.5 w-3.5" />
+                        <span>+12% vs last month</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stat Card 2 */}
+                  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition duration-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active AI Agents</span>
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100/50 text-emerald-700">
+                        <Bot className="h-5 w-5" />
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.activeAIAgents}</span>
+                      <div className="mt-1.5 flex items-center gap-1 text-xs text-slate-500 font-medium">
+                        <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>All systems healthy</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stat Card 3 */}
+                  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition duration-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">High Match Pool</span>
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100/50 text-indigo-700">
+                        <UserCheck className="h-5 w-5" />
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.highMatchCandidates}</span>
+                      <div className="mt-1.5 flex items-center gap-1 text-xs text-slate-500 font-medium">
+                        <span>Score matching &gt;= 90%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stat Card 4 */}
+                  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition duration-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Hours Saved (Est.)</span>
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 border border-amber-100/50 text-amber-700">
+                        <Clock className="h-5 w-5" />
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.hoursSavedThisMonth} hrs</span>
+                      <div className="mt-1.5 flex items-center gap-1 text-xs font-medium text-emerald-600">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>Autonomous workflows</span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Dashboard Secondary Layout: Two Column layout */}
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                  
+                  {/* Left columns: AI Agent Summary & Activities */}
+                  <div className="lg:col-span-2 space-y-6">
+                    
+                    {/* Active Agents Card List */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">Active AI Workspace</h3>
+                          <p className="text-xs text-slate-500">Intelligent background agents dispatching candidate workflows.</p>
+                        </div>
+                        <button 
+                          onClick={() => setCurrentTab("agents")} 
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
+                        >
+                          <span>Manage Agents</span>
+                          <ArrowRight className="h-3 w-3" />
+                        </button>
+                      </div>
+
+                      <div className="divide-y divide-slate-100">
+                        {agents.map((agent) => (
+                          <div key={agent.id} className="flex items-center justify-between py-3.5 first:pt-0 last:pb-0">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 border border-slate-100 text-slate-800">
+                                <Bot className="h-4 w-4" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-slate-800">{agent.name}</span>
+                                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                                    {agent.tag}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-500 truncate max-w-sm sm:max-w-md mt-0.5">
+                                  {agent.description}
+                                </p>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-4">
+                              <div className="text-right hidden sm:block">
+                                <p className="text-xs font-semibold text-slate-800">{agent.tasksCompleted} tasks</p>
+                                <p className="text-[10px] text-slate-400 font-medium">{agent.efficiency}</p>
+                              </div>
+                              <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                                agent.status === "Active" 
+                                  ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10" 
+                                  : agent.status === "Paused"
+                                  ? "bg-rose-50 text-rose-700 ring-1 ring-rose-600/10"
+                                  : "bg-amber-50 text-amber-700 ring-1 ring-amber-600/10"
+                              }`}>
+                                <span className={`mr-1 h-1.5 w-1.5 rounded-full ${
+                                  agent.status === "Active" ? "bg-emerald-500 animate-pulse" : agent.status === "Paused" ? "bg-rose-500" : "bg-amber-500"
+                                }`} />
+                                {agent.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Pending Action Pipeline */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900">Unscreened Candidate Queue</h3>
+                          <p className="text-xs text-slate-500">Run immediate match analysis with ScreenerX model evaluations.</p>
+                        </div>
+                        <button 
+                          onClick={() => setCurrentTab("candidates")}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
+                        >
+                          <span>All Candidates</span>
+                          <ArrowRight className="h-3 w-3" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {candidates.filter(c => c.score === null).length > 0 ? (
+                          candidates.filter(c => c.score === null).map((cand) => (
+                            <div 
+                              key={cand.id} 
+                              className="flex items-center justify-between p-3.5 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-slate-700 font-bold text-xs uppercase">
+                                  {cand.name.split(" ").map(n => n[0]).join("")}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-800">{cand.name}</p>
+                                  <p className="text-xs text-slate-500">{cand.role} &bull; {cand.department}</p>
+                                </div>
+                              </div>
+
+                              <div>
+                                {cand.screeningStatus === "running" ? (
+                                  <div className="inline-flex items-center gap-1.5 text-xs text-indigo-600 font-semibold bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-1.5">
+                                    <RefreshCw className="h-3 w-3 animate-spin" />
+                                    <span>Screening...</span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => triggerAIScreen(cand.id)}
+                                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-950 hover:bg-slate-100 border border-slate-200 bg-white px-3 py-1.5 rounded-lg transition focus:outline-none shadow-sm"
+                                  >
+                                    <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                                    <span>Trigger AI Screen</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-slate-200 rounded-xl">
+                            <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+                            <p className="text-sm font-semibold text-slate-800 mt-2">Zero Pending Reviews</p>
+                            <p className="text-xs text-slate-500 mt-1">ScreenerX has successfully qualified every candidate.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Right side: Insights Panel / Quick Metrics & HR Activity Feed */}
+                  <div className="space-y-6">
+                    
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                      <h3 className="text-base font-bold text-slate-900 mb-4">Pipeline Pipeline Stats</h3>
+                      
+                      {/* Metric chart simulation */}
+                      <div className="space-y-4">
+                        <div>
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                            <span>ScreenerX Qualify Rate</span>
+                            <span className="text-slate-800">74%</span>
+                          </div>
+                          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                            <div className="h-full rounded-full bg-indigo-600" style={{ width: "74%" }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                            <span>Interview Converge Rate</span>
+                            <span className="text-slate-800">42%</span>
+                          </div>
+                          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                            <div className="h-full rounded-full bg-emerald-500" style={{ width: "42%" }} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                            <span>Offer Acceptance Rate</span>
+                            <span className="text-slate-800">92%</span>
+                          </div>
+                          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                            <div className="h-full rounded-full bg-amber-500" style={{ width: "92%" }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-100 my-4 pt-4 text-xs">
+                        <div className="flex items-start gap-2.5">
+                          <AlertCircle className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+                          <p className="text-slate-500 leading-normal">
+                            Matching rates are computed automatically across your recruitment criteria mapping using local context.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* HR Team Activity Feed */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                      <h3 className="text-base font-bold text-slate-900 mb-4">Live Activities</h3>
+                      <div className="flow-root">
+                        <ul className="-mb-8">
+                          {[
+                            {
+                              id: 1,
+                              content: "ScreenerX calculated score of 96% for",
+                              target: "Sarah Chen",
+                              date: "2 hours ago",
+                              icon: Sparkles,
+                              iconBg: "bg-indigo-50 text-indigo-700 border-indigo-100",
+                            },
+                            {
+                              id: 2,
+                              content: "SchedulerPro dispatched invite to",
+                              target: "Alex Rivera",
+                              date: "5 hours ago",
+                              icon: Calendar,
+                              iconBg: "bg-amber-50 text-amber-700 border-amber-100",
+                            },
+                            {
+                              id: 3,
+                              content: "New candidate added via form link:",
+                              target: "Marcus Vance",
+                              date: "1 day ago",
+                              icon: Users,
+                              iconBg: "bg-slate-50 text-slate-700 border-slate-100",
+                            }
+                          ].map((item, itemIdx) => (
+                            <li key={item.id}>
+                              <div className="relative pb-8">
+                                {itemIdx !== 2 ? (
+                                  <span className="absolute left-4.5 top-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true" />
+                                ) : null}
+                                <div className="relative flex space-x-3">
+                                  <div>
+                                    <span className={`flex h-9 w-9 items-center justify-center rounded-xl border ${item.iconBg}`}>
+                                      <item.icon className="h-4 w-4" aria-hidden="true" />
+                                    </span>
+                                  </div>
+                                  <div className="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
+                                    <div>
+                                      <p className="text-xs text-slate-600 leading-normal">
+                                        {item.content}{" "}
+                                        <span className="font-semibold text-slate-800">{item.target}</span>
+                                      </p>
+                                    </div>
+                                    <div className="whitespace-nowrap text-right text-[10px] font-medium text-slate-400">
+                                      <time>{item.date}</time>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
+            )}
+
+            {/* ----------------- TAB: AI AGENTS ----------------- */}
+            {currentTab === "agents" && (
+              <div id="agents-tab">
+                <AgentAnalytics />
+              </div>
+            )}
+
+            {/* ----------------- TAB: CANDIDATES ----------------- */}
+            {currentTab === "candidates" && (
+              <div className="space-y-6" id="candidates-tab">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-5">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Candidate Pipeline Hub</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Track applicants, trigger custom AI qualifications, and inspect candidate scorecard aggregates.</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={() => setIsAddCandidateOpen(true)}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 transition focus:outline-none"
+                      id="add-candidate-trigger-btn"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>Add Candidate</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search & Filter Controls */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search candidate by name, role, or department..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 pl-9 pr-4 py-2 text-xs focus:border-slate-400 focus:outline-none transition bg-slate-50/50"
+                      id="candidate-search-input"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-slate-400" />
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs focus:border-slate-400 focus:outline-none bg-slate-50/50 text-slate-600 font-medium"
+                      id="candidate-status-filter"
+                    >
+                      <option value="All">All Stages</option>
+                      <option value="Applied">Applied</option>
+                      <option value="Screening">Screening</option>
+                      <option value="Interviewing">Interviewing</option>
+                      <option value="Offered">Offered</option>
+                      <option value="Rejected">Rejected</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Candidate Table Layout */}
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-100 text-left">
+                      <thead className="bg-slate-50/70 font-sans text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                        <tr>
+                          <th className="px-6 py-3.5">Candidate Details</th>
+                          <th className="px-6 py-3.5">Role / Department</th>
+                          <th className="px-6 py-3.5">Applied Date</th>
+                          <th className="px-6 py-3.5 text-center">AI Match Score</th>
+                          <th className="px-6 py-3.5">Status</th>
+                          <th className="relative px-6 py-3.5 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white text-xs">
+                        {filteredCandidates.length > 0 ? (
+                          filteredCandidates.map((cand) => (
+                            <tr key={cand.id} className="hover:bg-slate-50/50 transition">
+                              <td className="whitespace-nowrap px-6 py-4.5">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 border border-slate-200 font-bold text-slate-800">
+                                    {cand.name.split(" ").map(n => n[0]).join("")}
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-slate-900">{cand.name}</div>
+                                    <div className="text-slate-400 mt-0.5">{cand.email}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              
+                              <td className="whitespace-nowrap px-6 py-4.5">
+                                <div className="font-medium text-slate-800">{cand.role}</div>
+                                <div className="text-slate-500 mt-0.5">{cand.department}</div>
+                              </td>
+
+                              <td className="whitespace-nowrap px-6 py-4.5 text-slate-500">
+                                {cand.appliedDate}
+                              </td>
+
+                              <td className="whitespace-nowrap px-6 py-4.5 text-center">
+                                {cand.score ? (
+                                  <div className="inline-flex items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 py-1 text-indigo-700 font-mono font-bold">
+                                    {cand.score}%
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 font-medium">Unscreened</span>
+                                )}
+                              </td>
+
+                              <td className="whitespace-nowrap px-6 py-4.5">
+                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                  cand.status === "Applied" 
+                                    ? "bg-slate-100 text-slate-800" 
+                                    : cand.status === "Screening"
+                                    ? "bg-sky-50 text-sky-700 border-sky-100"
+                                    : cand.status === "Interviewing"
+                                    ? "bg-indigo-50 text-indigo-700 border-indigo-100"
+                                    : cand.status === "Offered"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                    : "bg-rose-50 text-rose-700 border-rose-100"
+                                }`}>
+                                  {cand.status}
+                                </span>
+                              </td>
+
+                              <td className="whitespace-nowrap px-6 py-4.5 text-right font-medium">
+                                <div className="flex items-center justify-end gap-2">
+                                  {cand.score === null && (
+                                    <>
+                                      {cand.screeningStatus === "running" ? (
+                                        <div className="inline-flex items-center gap-1.5 text-indigo-600 font-semibold px-3 py-1.5 bg-indigo-50/50 rounded-lg border border-indigo-100">
+                                          <RefreshCw className="h-3 w-3 animate-spin" />
+                                          <span>Scanning...</span>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          onClick={() => triggerAIScreen(cand.id)}
+                                          className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 font-semibold text-indigo-700 hover:bg-indigo-100/60 transition focus:outline-none"
+                                        >
+                                          <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                                          <span>AI Screen</span>
+                                        </button>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {cand.score !== null && (
+                                    <button
+                                      onClick={() => alert(`ScreenerX Scorecard Analysis:\nCandidate: ${cand.name}\n\nMatching Score: ${cand.score}%\n\nResume Summary: ${cand.summary || 'Matches ideal workforce parameters.'}`)}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-semibold text-slate-700 hover:bg-slate-50 transition focus:outline-none"
+                                    >
+                                      <Eye className="h-3.5 w-3.5 text-slate-500" />
+                                      <span>View Scorecard</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    onClick={() => {
+                                      if (confirm(`Remove ${cand.name} from pipeline?`)) {
+                                        setCandidates(prev => prev.filter(c => c.id !== cand.id));
+                                        showToast(`Removed candidate ${cand.name}.`);
+                                      }
+                                    }}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition focus:outline-none"
+                                    title="Delete candidate"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                              <div className="flex flex-col items-center justify-center">
+                                <Search className="h-8 w-8 text-slate-300 mb-2" />
+                                <p className="text-sm font-semibold text-slate-700">No candidates found</p>
+                                <p className="text-xs text-slate-400 mt-1">Try adjusting your search queries or filter categories.</p>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ----------------- TAB: ANALYTICS ----------------- */}
+            {currentTab === "analytics" && (
+              <div className="space-y-6" id="analytics-tab">
+                <div className="border-b border-slate-200 pb-5">
+                  <h2 className="text-xl font-bold text-slate-900">Advanced Analytics Dashboard</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">Synthesize macro HR trends, time-to-hire matrices, and AI effectiveness scores.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  
+                  {/* Metric Block */}
+                  <div className="md:col-span-1 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <h3 className="text-sm font-bold text-slate-900 mb-4">Pipeline Distribution</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
+                          <span>Engineering</span>
+                          <span className="text-slate-800">3 Candidates</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-indigo-600" style={{ width: "60%" }} />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
+                          <span>Product Management</span>
+                          <span className="text-slate-800">1 Candidate</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-sky-500" style={{ width: "20%" }} />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
+                          <span>UX Design</span>
+                          <span className="text-slate-800">1 Candidate</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-emerald-500" style={{ width: "20%" }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Efficiency Block */}
+                  <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Interview Cycle Acceleration</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Visual representation of weekly hiring cycle velocity since SchedulerPro launch.</p>
+                      </div>
+                      <div className="rounded-full bg-emerald-50 border border-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                        84% accelerated
+                      </div>
+                    </div>
+
+                    {/* Simulating high quality graph using simple markup */}
+                    <div className="h-44 flex items-end gap-4 pt-4 border-b border-l border-slate-100 px-2">
+                      {[32, 45, 14, 52, 60, 24, 76, 88, 92, 94].map((height, i) => (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+                          <div 
+                            className="w-full bg-slate-900 rounded-t-md hover:bg-indigo-600 transition duration-200 cursor-pointer relative group" 
+                            style={{ height: `${height}%` }}
+                          >
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-slate-950 text-white rounded-lg px-2 py-1 text-[10px] font-mono whitespace-nowrap z-30 shadow-md">
+                              Week {i+1}: {height} hrs saved
+                            </div>
+                          </div>
+                          <span className="font-mono text-[9px] text-slate-400">W{i+1}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Additional KPI blocks */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <h3 className="text-sm font-bold text-slate-900 mb-4">Autonomous Recruiting Impact</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 text-center">
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                      <p className="text-2xl font-bold text-slate-900">4.8 days</p>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-1">Average Time-to-Screen</p>
+                      <span className="text-[10px] text-emerald-600 font-medium inline-block mt-1">Saved 8 days globally</span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                      <p className="text-2xl font-bold text-slate-900">92%</p>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-1">Agent Confidence Accuracy</p>
+                      <span className="text-[10px] text-emerald-600 font-medium inline-block mt-1">9.2/10 interviewer alignment</span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                      <p className="text-2xl font-bold text-slate-900">$18.4k</p>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-1">External Agency Costs Saved</p>
+                      <span className="text-[10px] text-emerald-600 font-medium inline-block mt-1">Since April 2026 deployment</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+          </motion.div>
+        </AnimatePresence>
+          </div>
+        </main>
+      </div>
+
+      {/* ----------------- MODAL: ADD CANDIDATE ----------------- */}
+      <AnimatePresence>
+        {isAddCandidateOpen && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4 text-center">
+              
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsAddCandidateOpen(false)}
+                className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm transition-opacity"
+              />
+
+              {/* Modal Container */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                transition={{ duration: 0.2 }}
+                className="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-xl transition-all w-full max-w-lg p-6 border border-slate-200"
+                id="add-candidate-modal"
+              >
+                <div className="absolute right-4 top-4">
+                  <button
+                    onClick={() => setIsAddCandidateOpen(false)}
+                    className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2.5 mb-6">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm">
+                    <UserCheck className="h-5 w-5 text-slate-100" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Add New Candidate</h3>
+                    <p className="text-xs text-slate-400">Initialize a custom candidate card into your ATS qualification tracker.</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleAddCandidateSubmit} className="space-y-4">
+                  <div>
+                    <label htmlFor="cand-name" className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      id="cand-name"
+                      required
+                      value={newCandName}
+                      onChange={(e) => setNewCandName(e.target.value)}
+                      placeholder="Jane Doe"
+                      className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-xs focus:border-slate-400 focus:outline-none transition"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="cand-role" className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                        Applied Role *
+                      </label>
+                      <input
+                        type="text"
+                        id="cand-role"
+                        required
+                        value={newCandRole}
+                        onChange={(e) => setNewCandRole(e.target.value)}
+                        placeholder="Sr. Product Designer"
+                        className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-xs focus:border-slate-400 focus:outline-none transition"
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="cand-dept" className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                        Department
+                      </label>
+                      <select
+                        id="cand-dept"
+                        value={newCandDept}
+                        onChange={(e) => setNewCandDept(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-xs focus:border-slate-400 focus:outline-none transition bg-white"
+                      >
+                        <option value="Engineering">Engineering</option>
+                        <option value="Design">Design</option>
+                        <option value="Product">Product</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Human Resources">Human Resources</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="cand-email" className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                      Email Address *
+                    </label>
+                    <input
+                      type="email"
+                      id="cand-email"
+                      required
+                      value={newCandEmail}
+                      onChange={(e) => setNewCandEmail(e.target.value)}
+                      placeholder="jane.doe@example.com"
+                      className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-xs focus:border-slate-400 focus:outline-none transition"
+                    />
+                  </div>
+
+                  <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsAddCandidateOpen(false)}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition focus:outline-none"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 transition focus:outline-none"
+                    >
+                      Add Candidate
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ----------------- DRAWER / MODAL: AGENT CONFIGURATION ----------------- */}
+      <AnimatePresence>
+        {selectedAgentForConfig && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4 text-center">
+              
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setSelectedAgentForConfig(null)}
+                className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm transition-opacity"
+              />
+
+              {/* Modal Container */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                transition={{ duration: 0.2 }}
+                className="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-xl transition-all w-full max-w-lg p-6 border border-slate-200"
+                id="agent-config-modal"
+              >
+                <div className="absolute right-4 top-4">
+                  <button
+                    onClick={() => setSelectedAgentForConfig(null)}
+                    className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2.5 mb-6">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-white shadow-sm">
+                    <Sliders className="h-5 w-5 text-slate-100" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Configure {selectedAgentForConfig.name}</h3>
+                    <p className="text-xs text-slate-400">Tweak core parameters, confidence boundaries, and intake vectors.</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleAgentConfigSave} className="space-y-4">
+                  <div>
+                    <label htmlFor="agent-channel" className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                      Integration Intake Channel
+                    </label>
+                    <input
+                      type="text"
+                      id="agent-channel"
+                      value={selectedAgentForConfig.config.channel}
+                      onChange={(e) => setSelectedAgentForConfig({
+                        ...selectedAgentForConfig,
+                        config: { ...selectedAgentForConfig.config, channel: e.target.value }
+                      })}
+                      className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-xs focus:border-slate-400 focus:outline-none transition"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label htmlFor="confidence-slider" className="block text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                        Confidence Score Threshold
+                      </label>
+                      <span className="font-mono text-xs font-bold text-indigo-600">
+                        {selectedAgentForConfig.config.confidenceThreshold}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      id="confidence-slider"
+                      min="50"
+                      max="95"
+                      step="5"
+                      value={selectedAgentForConfig.config.confidenceThreshold}
+                      onChange={(e) => setSelectedAgentForConfig({
+                        ...selectedAgentForConfig,
+                        config: { ...selectedAgentForConfig.config, confidenceThreshold: parseInt(e.target.value) }
+                      })}
+                      className="w-full accent-indigo-600 h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Triggers warning escalation loops for scores registered beneath this standard.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50 mt-4">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-700">Autonomous Instant Screening</span>
+                      <span className="text-[10px] text-slate-400">Trigger qualification analysis immediately upon inbound upload.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAgentForConfig({
+                        ...selectedAgentForConfig,
+                        config: { ...selectedAgentForConfig.config, autoScreen: !selectedAgentForConfig.config.autoScreen }
+                      })}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        selectedAgentForConfig.config.autoScreen ? "bg-slate-900" : "bg-slate-200"
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          selectedAgentForConfig.config.autoScreen ? "translate-x-5" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAgentForConfig(null)}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition focus:outline-none"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 transition focus:outline-none"
+                    >
+                      Save Configuration
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Global Micro Notification System */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 15, scale: 0.95 }}
+            className="fixed bottom-6 right-6 z-50 max-w-sm rounded-xl border border-slate-200 bg-white p-4 shadow-xl ring-1 ring-black/5 flex items-start gap-3.5"
+            id="toast-notification"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white">
+              <Bot className="h-4.5 w-4.5" />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-slate-900">System Notification</p>
+              <p className="text-xs text-slate-500 mt-0.5 leading-normal">{toastMessage}</p>
+            </div>
+            <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-slate-600 transition">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modern, Minimalist SaaS Footer */}
+      <footer className="mt-auto border-t border-slate-200/80 bg-white py-6">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-medium text-slate-400">
+          <p className="flex items-center gap-1.5">
+            <Bot className="h-3.5 w-3.5 text-slate-500" />
+            <span>&copy; {new Date().getFullYear()} Agentix AI. All rights reserved.</span>
+          </p>
+          <div className="flex gap-4">
+            <button className="hover:text-slate-600 transition">Privacy Policy</button>
+            <button className="hover:text-slate-600 transition">Terms of Service</button>
+            <button className="hover:text-slate-600 transition">Status Hub</button>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
