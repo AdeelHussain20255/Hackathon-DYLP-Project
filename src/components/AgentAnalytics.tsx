@@ -119,7 +119,7 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, can
                 <Activity className="h-4.5 w-4.5 text-indigo-600" />
                 Autonomous Agent Control Panel
               </h3>
-              <span className="text-[10px] text-slate-400 font-mono">ScreenerX Engine v2.4</span>
+              <span className="text-[10px] text-slate-400 font-mono">Agentix Core</span>
             </div>
 
 

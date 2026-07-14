@@ -757,7 +757,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                   
                   {/* Left Column: Job Description */}
                   <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
-                    <div>
+                    <div className="flex-1 flex flex-col">
                       <div className="flex items-center justify-between mb-3">
                         <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                           <span className="flex items-center justify-center h-6 w-6 rounded-full bg-slate-950 text-white text-xs font-bold">1</span>
@@ -782,8 +782,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                         value={jobDescription}
                         onChange={(e) => handleJdChange(e.target.value)}
                         placeholder="Paste Job Description here..."
-                        rows={10}
-                        className="w-full text-sm rounded-xl border border-slate-200 p-4 focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 outline-none transition font-sans leading-relaxed text-slate-700 bg-slate-50/50"
+                        className="w-full text-sm rounded-xl border border-slate-200 p-4 focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 outline-none transition font-sans leading-relaxed text-slate-700 bg-slate-50/50 min-h-[280px] resize-y overflow-y-auto"
                       />
                     </div>
 
