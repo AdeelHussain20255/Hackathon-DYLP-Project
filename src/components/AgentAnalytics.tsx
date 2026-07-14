@@ -181,13 +181,6 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, can
             </div>
           </div>
 
-          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-            <span>Click any toggle switch to resume or intercept the background thread.</span>
-            <span className="font-semibold text-indigo-600 hover:underline cursor-pointer flex items-center gap-0.5">
-              <span>View logs</span>
-              <span>&rarr;</span>
-            </span>
-          </div>
         </div>
 
         {/* RIGHT COLUMN: Enterprise Metrics KPI Cards (5 cols) */}
@@ -243,18 +236,6 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, can
             <div className="h-12 w-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
               <Clock className="h-5.5 w-5.5 text-emerald-500" />
             </div>
-          </div>
-
-          {/* System Diagnostic Indicator Banner */}
-          <div className="bg-slate-900 rounded-2xl p-4 text-white flex items-center justify-between border border-slate-950">
-            <div className="space-y-0.5">
-              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Security &amp; Compute Status</span>
-              <div className="text-xs font-semibold flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <span>All Micro-agents running optimally.</span>
-              </div>
-            </div>
-            <span className="text-[10px] text-slate-400 font-mono">ID: SEC-889a</span>
           </div>
 
         </div>
@@ -382,19 +363,6 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, can
       </div>
       )}
 
-      {/* Footer Audit Statement */}
-      <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-indigo-500 animate-spin" />
-          <span>Real-time processing feeds synchronized with state manager. Last checked: Just now</span>
-        </div>
-        <button 
-          onClick={() => alert("Diagnostic verification successful. Memory consumption: 42MB. Host: Cloud Run container.")}
-          className="text-indigo-600 hover:text-indigo-800 font-semibold underline self-start sm:self-center cursor-pointer"
-        >
-          Verify diagnostic health
-        </button>
-      </div>
     </div>
   );
 }

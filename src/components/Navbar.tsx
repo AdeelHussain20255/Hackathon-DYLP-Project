@@ -33,12 +33,12 @@ interface NavbarProps {
   } | null;
   onSignIn: () => void;
   onSignOut: () => void;
+  onMenuToggle?: () => void;
 }
 
-export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSignOut }: NavbarProps) {
+export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSignOut, onMenuToggle }: NavbarProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const navItems = [
     { id: "landing",    label: "Home" },
@@ -47,11 +47,6 @@ export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSi
     { id: "candidates", label: "Candidates" },
     { id: "analytics",  label: "Analytics" },
   ];
-
-  const handleNavClick = (id: string) => {
-    setCurrentTab(id);
-    setIsMobileMenuOpen(false);
-  };
 
   return (
     <>
@@ -62,7 +57,7 @@ export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSi
           <div className="flex items-center gap-2 flex-shrink-0">
             {/* Hamburger — only visible below md */}
             <button
-              onClick={() => setIsMobileMenuOpen(true)}
+              onClick={() => onMenuToggle?.()}
               className="md:hidden flex-shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-700 focus:outline-none"
               aria-label="Open navigation menu"
             >
@@ -265,92 +260,6 @@ export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSi
         </div>
       </header>
 
-      {/* ── Mobile Drawer ── */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              key="drawer-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm md:hidden"
-              onClick={() => setIsMobileMenuOpen(false)}
-            />
-
-            {/* Slide-over panel */}
-            <motion.div
-              key="drawer-panel"
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="fixed inset-y-0 left-0 z-50 w-72 bg-white shadow-xl flex flex-col md:hidden"
-            >
-              {/* Drawer header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900">
-                    <Terminal className="h-3.5 w-3.5 text-white" strokeWidth={2} />
-                  </div>
-                  <span className="font-bold text-sm text-slate-900 tracking-tight">Agentix AI</span>
-                </div>
-                <button
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition focus:outline-none"
-                  aria-label="Close navigation menu"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Nav links */}
-              <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-                <p className="px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                  Main Menu
-                </p>
-                {navItems.map((item) => {
-                  const isActive = currentTab === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => handleNavClick(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition text-left ${
-                        isActive
-                          ? "bg-slate-100 text-slate-900 font-semibold"
-                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                      }`}
-                    >
-                      {item.label}
-                      {isActive && (
-                        <span className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-600" />
-                      )}
-                    </button>
-                  );
-                })}
-              </nav>
-
-              {/* Drawer footer — user info if logged in */}
-              {user && (
-                <div className="border-t border-slate-100 px-5 py-4 flex items-center gap-3">
-                  <img
-                    src={user.avatarUrl}
-                    alt={user.name}
-                    className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200 shrink-0"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-800 truncate">{user.name}</p>
-                    <p className="text-[10px] text-slate-400 truncate">{user.role}</p>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
     </>
   );
 }

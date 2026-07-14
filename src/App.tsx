@@ -36,6 +36,36 @@ const plural = (count: number, singular: string, pluralForm?: string): string =>
   return `${count} ${word}`;
 };
 
+interface SidebarItemProps {
+  tab: string;
+  label: string;
+  currentTab: string;
+  onNavigate: (tab: string) => void;
+  badge?: string;
+  badgeClass?: string;
+}
+
+function SidebarItem({ tab, label, currentTab, onNavigate, badge, badgeClass }: SidebarItemProps) {
+  const isActive = currentTab === tab;
+  return (
+    <button
+      onClick={() => onNavigate(tab)}
+      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition text-left cursor-pointer ${
+        isActive
+          ? "bg-slate-100 text-slate-900 font-semibold"
+          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+      }`}
+    >
+      <span>{label}</span>
+      {badge && (
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badgeClass || "bg-slate-100 text-slate-600"}`}>
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export default function App() {
   // Current Navigation Tab
   const [currentTab, setCurrentTab] = useState("landing");
@@ -72,6 +102,10 @@ export default function App() {
   const setCandidateStage = useAppStore((s) => s.setCandidateStage);
   const advanceCandidateStage = useAppStore((s) => s.advanceCandidateStage);
   const toggleAgent = useAppStore((s) => s.toggleAgent);
+
+  const scored = candidates.filter(c => c.matchScore !== null);
+  const avgMatch = scored.length ? Math.round(scored.reduce((a, c) => a + (c.matchScore ?? 0), 0) / scored.length) : 0;
+  const avgMatchScoreLabel = `${avgMatch}% Match`;
 
   // 1. Initial State for AI Agents
   const [aiAgents, setAiAgents] = useState<AIAgent[]>([
@@ -118,6 +152,9 @@ export default function App() {
   ]);
 
   // 2. Candidates now live in useAppStore
+
+  // Mobile sidebar toggle
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Search & Filter state for candidates tab
   const [searchQuery, setSearchQuery] = useState("");
@@ -542,42 +579,131 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
         user={user}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
+        onMenuToggle={() => setIsSidebarOpen(true)}
       />
 
       {/* Landing Page - full width, no sidebar */}
       {currentTab === "landing" ? (
         <LandingPage onLaunchDashboard={() => setCurrentTab("dashboard")} />
       ) : (
-        /* App Layout Body with Sidebar */
-        <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar Navigation */}
-          <aside className="hidden md:flex w-60 bg-white border-r border-slate-200 flex-col p-4 flex-none overflow-y-auto">
-            <div className="space-y-1">
-              <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Main Menu</div>
-              <button
-                onClick={() => setCurrentTab("dashboard")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
-                  currentTab === "dashboard" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <span>Overview</span>
-              </button>
+        <div className="flex flex-1 overflow-hidden relative">
+          {/* Mobile Sidebar Overlay */}
+          <AnimatePresence>
+            {isSidebarOpen && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm md:hidden"
+                />
+                <motion.aside
+                  initial={{ x: "-100%" }}
+                  animate={{ x: 0 }}
+                  exit={{ x: "-100%" }}
+                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  className="fixed left-0 top-0 z-50 h-full w-64 bg-white border-r border-slate-200 p-4 shadow-xl md:hidden"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Main Menu</span>
+                    <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    <SidebarItem
+                      tab="dashboard"
+                      label="Home / Overview"
+                      currentTab={currentTab}
+                      onNavigate={(t) => { setCurrentTab(t); setIsSidebarOpen(false); }}
+                    />
+                    <SidebarItem
+                      tab="dashboard"
+                      label="Dashboard"
+                      badge="1 Draft"
+                      badgeClass="bg-amber-50 text-amber-700 border border-amber-200/50"
+                      currentTab={currentTab}
+                      onNavigate={(t) => { setCurrentTab(t); setIsSidebarOpen(false); }}
+                    />
+                    <SidebarItem
+                      tab="agents"
+                      label="AI Agents"
+                      badge={plural(agents.filter(a => a.isRunning).length, "Active")}
+                      badgeClass="bg-purple-50 text-purple-700 border border-purple-200/50"
+                      currentTab={currentTab}
+                      onNavigate={(t) => { setCurrentTab(t); setIsSidebarOpen(false); }}
+                    />
+                    <SidebarItem
+                      tab="candidates"
+                      label="Candidates"
+                      badge={`${candidates.length} New`}
+                      badgeClass="bg-blue-50 text-blue-700 border border-blue-200/50"
+                      currentTab={currentTab}
+                      onNavigate={(t) => { setCurrentTab(t); setIsSidebarOpen(false); }}
+                    />
+                    <SidebarItem
+                      tab="analytics"
+                      label="Analytics"
+                      badge={avgMatchScoreLabel}
+                      badgeClass="bg-emerald-50 text-emerald-700 border border-emerald-200/50"
+                      currentTab={currentTab}
+                      onNavigate={(t) => { setCurrentTab(t); setIsSidebarOpen(false); }}
+                    />
+                  </div>
+                </motion.aside>
+              </>
+            )}
+          </AnimatePresence>
 
-              <button
-                onClick={() => setCurrentTab("agents")}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
-                  currentTab === "agents" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <span>AI Agents</span>
-                <span className="ml-auto bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-                  {plural(agents.filter(a => a.isRunning).length, "Active Agent")}
-                </span>
-              </button>
+          {/* Desktop Sidebar */}
+          <aside className="hidden md:flex flex-col w-64 border-r border-slate-200 bg-white shrink-0">
+            <div className="p-4 border-b border-slate-100">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Main Menu</span>
             </div>
+            <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+              <SidebarItem
+                tab="dashboard"
+                label="Home / Overview"
+                currentTab={currentTab}
+                onNavigate={setCurrentTab}
+              />
+              <SidebarItem
+                tab="dashboard"
+                label="Dashboard"
+                badge="1 Draft"
+                badgeClass="bg-amber-50 text-amber-700 border border-amber-200/50"
+                currentTab={currentTab}
+                onNavigate={setCurrentTab}
+              />
+              <SidebarItem
+                tab="agents"
+                label="AI Agents"
+                badge={plural(agents.filter(a => a.isRunning).length, "Active")}
+                badgeClass="bg-purple-50 text-purple-700 border border-purple-200/50"
+                currentTab={currentTab}
+                onNavigate={setCurrentTab}
+              />
+              <SidebarItem
+                tab="candidates"
+                label="Candidates"
+                badge={`${candidates.length} New`}
+                badgeClass="bg-blue-50 text-blue-700 border border-blue-200/50"
+                currentTab={currentTab}
+                onNavigate={setCurrentTab}
+              />
+              <SidebarItem
+                tab="analytics"
+                label="Analytics"
+                badge={avgMatchScoreLabel}
+                badgeClass="bg-emerald-50 text-emerald-700 border border-emerald-200/50"
+                currentTab={currentTab}
+                onNavigate={setCurrentTab}
+              />
+            </nav>
           </aside>
 
-          {/* Main Content Area */}
+          {/* Main Content Area - full width */}
           <main className="flex-1 min-w-0 px-4 py-6 md:px-8 overflow-y-auto">
             <div className="w-full max-w-6xl mx-auto space-y-8">
         
