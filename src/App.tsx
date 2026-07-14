@@ -1,32 +1,20 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { GoogleGenAI } from "@google/genai";
+import dashboardConfig, { type DashboardConfig } from "./data/dashboardConfig";
+import { useAppStore } from "./store/useAppStore";
 import { 
   Bot, Sparkles, Search, Plus, Filter, CheckCircle2, Clock, 
   TrendingUp, Users, FileText, Sliders, Eye, RefreshCw, 
-  AlertCircle, Calendar, ArrowRight, UserCheck, Trash2, Check, X, UploadCloud
+  AlertCircle, UserCheck, Trash2, Check, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import Navbar from "./components/Navbar";
-import Leaderboard from "./components/Leaderboard";
 import AgentAnalytics from "./components/AgentAnalytics";
 import BulkUploadZone from "./components/BulkUploadZone";
 import AgentQueue from "./components/AgentQueue";
 import LandingPage from "./components/LandingPage";
 
 // Define TypeScript interfaces for our application state
-interface Candidate {
-  id: string;
-  name: string;
-  role: string;
-  department: string;
-  status: "Applied" | "Screening" | "Interviewing" | "Offered" | "Rejected";
-  score: number | null;
-  appliedDate: string;
-  email: string;
-  summary?: string;
-  screeningStatus: "idle" | "running" | "completed";
-}
-
 interface AIAgent {
   id: string;
   name: string;
@@ -41,6 +29,13 @@ interface AIAgent {
     autoScreen: boolean;
   };
 }
+
+// Pluralization helper: plural(3, "agent") → "3 agents", plural(1, "agent") → "1 agent"
+// Optional custom plural form: plural(2, "CV", "CVs") → "2 CVs"
+const plural = (count: number, singular: string, pluralForm?: string): string => {
+  const word = count === 1 ? singular : (pluralForm ?? `${singular}s`);
+  return `${count} ${word}`;
+};
 
 export default function App() {
   // Current Navigation Tab
@@ -68,8 +63,25 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  // Dashboard config state — seeded from dashboardConfig.ts.
+  // Changing a value in that file causes a hot-reload which re-runs this effect.
+  const [config, setConfig] = useState<DashboardConfig>(dashboardConfig);
+  useEffect(() => {
+    setConfig(dashboardConfig);
+  }, []); // runs once on mount; HMR re-executes the module, which re-runs the effect
+
+  const candidates = useAppStore((s) => s.candidates);
+  const agents = useAppStore((s) => s.agents);
+  const addCandidate = useAppStore((s) => s.addCandidate);
+  const removeCandidate = useAppStore((s) => s.removeCandidate);
+  const prependCandidates = useAppStore((s) => s.prependCandidates);
+  const updateCandidateScore = useAppStore((s) => s.updateCandidateScore);
+  const setCandidateStage = useAppStore((s) => s.setCandidateStage);
+  const advanceCandidateStage = useAppStore((s) => s.advanceCandidateStage);
+  const toggleAgent = useAppStore((s) => s.toggleAgent);
+
   // 1. Initial State for AI Agents
-  const [agents, setAgents] = useState<AIAgent[]>([
+  const [aiAgents, setAiAgents] = useState<AIAgent[]>([
     {
       id: "screener-x",
       name: "ScreenerX",
@@ -112,67 +124,7 @@ export default function App() {
     }
   ]);
 
-  // 2. Initial State for Candidates
-  const [candidates, setCandidates] = useState<Candidate[]>([
-    {
-      id: "1",
-      name: "Sarah Chen",
-      role: "Senior Full Stack Engineer",
-      department: "Engineering",
-      status: "Interviewing",
-      score: 96,
-      appliedDate: "2026-07-08",
-      email: "sarah.chen@techcorp.io",
-      summary: "Exceptional mastery of React 19, TypeScript, and microservice architectures. Ex-Stripe with strong systems experience.",
-      screeningStatus: "completed"
-    },
-    {
-      id: "2",
-      name: "Alex Rivera",
-      role: "Lead UX Designer",
-      department: "Design",
-      status: "Applied",
-      score: 91,
-      appliedDate: "2026-07-09",
-      email: "alex.rivera@designlab.co",
-      summary: "Pristine visual portfolio focusing on enterprise SaaS layouts, responsive designs, and interactive dynamic flows.",
-      screeningStatus: "completed"
-    },
-    {
-      id: "3",
-      name: "Marcus Vance",
-      role: "Staff DevOps Architect",
-      department: "Engineering",
-      status: "Screening",
-      score: null,
-      appliedDate: "2026-07-10",
-      email: "marcus.vance@cloudsolutions.net",
-      screeningStatus: "idle"
-    },
-    {
-      id: "4",
-      name: "Elena Rostova",
-      role: "VP of Product",
-      department: "Product",
-      status: "Offered",
-      score: 98,
-      appliedDate: "2026-07-05",
-      email: "elena.rostova@productmind.org",
-      summary: "Stellar enterprise scaling metrics. Scaled product from $5M to $45M ARR. High-agency product builder.",
-      screeningStatus: "completed"
-    },
-    {
-      id: "5",
-      name: "Derrick Kim",
-      role: "Technical Recruiter",
-      department: "Human Resources",
-      status: "Applied",
-      score: null,
-      appliedDate: "2026-07-10",
-      email: "derrick.kim@recruithub.com",
-      screeningStatus: "idle"
-    }
-  ]);
+  // 2. Candidates now live in useAppStore
 
   // Search & Filter state for candidates tab
   const [searchQuery, setSearchQuery] = useState("");
@@ -237,7 +189,7 @@ Required Skills:
       }));
       setStagedCvs(prev => [...prev, ...newStaged]);
       setFiles(prev => [...prev, ...newStaged]);
-      showToast(`Staged ${filesList.length} candidate CV file(s)`);
+      showToast(`Staged ${plural(filesList.length, "candidate CV file")}`);
     }
   };
 
@@ -252,7 +204,7 @@ Required Skills:
       }));
       setStagedCvs(prev => [...prev, ...newStaged]);
       setFiles(prev => [...prev, ...newStaged]);
-      showToast(`Staged ${filesList.length} candidate CV file(s)`);
+      showToast(`Staged ${plural(filesList.length, "candidate CV file")}`);
     }
   };
 
@@ -295,7 +247,8 @@ Required Skills:
     setFiles(prev => prev.map(f => ({ ...f, status: "parsing" })));
 
     const activeFilesList = stagedCvs.length > 0 ? stagedCvs : files;
-    const newScoredCandidates: Candidate[] = [];
+    interface ScoredCandidate { id: string; name: string; role: string; department: string; status: "Applied" | "Screening" | "Interviewing" | "Offered" | "Rejected"; matchScore: number; appliedDate: string; email: string; summary: string; currentStage: "Awaiting Parsing" | "Awaiting Ranking" | "Ready for Outreach" | "Invite Sent" | "Done"; }
+    const newScoredCandidates: ScoredCandidate[] = [];
 
     // Score each CV with Gemini AI
     const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || "" });
@@ -359,17 +312,17 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
         role,
         department: dept,
         status: "Applied" as const,
-        score,
+        matchScore: score,
         appliedDate: new Date().toISOString().split("T")[0],
         email,
         summary,
-        screeningStatus: "completed" as const
+        currentStage: "Done" as const,
       });
     }
 
     setScoringProgress(100);
 
-    setCandidates(prev => [...newScoredCandidates, ...prev]);
+    prependCandidates(newScoredCandidates);
     setStagedCvs([]);
     setFiles([]);
     setIsProcessing(false);
@@ -377,7 +330,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
     setScoringProgress(0);
     setIsLeaderboardRevealed(true);
 
-    showToast(`Agentix Scoring Complete! Evaluated and imported ${newScoredCandidates.length} candidate CVs.`);
+    showToast(`Agentix Scoring Complete! Evaluated and imported ${plural(newScoredCandidates.length, "candidate CV", "candidate CVs")}.`);
   };
 
   const runAgentixScoring = () => {
@@ -390,18 +343,10 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
   const [newCandDept, setNewCandDept] = useState("Engineering");
   const [newCandEmail, setNewCandEmail] = useState("");
 
-  // Adaptive Hour Greeting
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 17) return "Good afternoon";
-    return "Good evening";
-  }, []);
-
   // Filter candidates based on search query and status filter
   const filteredCandidates = useMemo(() => {
     return candidates.filter((cand) => {
-      const matchesSearch = 
+      const matchesSearch =
         cand.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         cand.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
         cand.department.toLowerCase().includes(searchQuery.toLowerCase());
@@ -415,28 +360,50 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
   // Aggregate Key Statistics
   const stats = useMemo(() => {
     const totalCandidates = candidates.length;
-    const activeAIAgents = agents.filter(a => a.status === "Active").length;
-    const highMatchCandidates = candidates.filter(c => c.score && c.score >= 90).length;
-    const hoursSavedThisMonth = agents.reduce((acc, current) => {
-      if (current.id === "screener-x") return acc + (current.tasksCompleted * 0.2); // 12 mins per resume
-      if (current.id === "scheduler-pro") return acc + (current.tasksCompleted * 0.5); // 30 mins per interview
-      if (current.id === "onboard-flow") return acc + (current.tasksCompleted * 1.5); // 90 mins per onboarding
-      return acc + 10;
-    }, 0);
+    const activeAIAgents = agents.filter(a => a.isRunning).length;
+    const highMatchCandidates = candidates.filter(c => c.matchScore && c.matchScore >= config.highMatchThreshold).length;
+    const hoursSavedThisMonth = 75 * totalCandidates;
 
     return {
       totalCandidates,
       activeAIAgents,
       highMatchCandidates,
-      hoursSavedThisMonth: Math.round(hoursSavedThisMonth),
+      hoursSavedThisMonth,
     };
-  }, [candidates, agents]);
+  }, [candidates, agents, config.highMatchThreshold]);
+
+  // Chart data - computed from config + live candidate state
+  const chartData = useMemo(() => {
+    // Skill match bar chart: transform config weights into actual counts
+    const skillMatchData = config.skillMatchData.map(skill => ({
+      name: skill.name,
+      Count: Math.max(1, Math.floor(stats.totalCandidates * skill.weight)),
+      color: skill.color,
+    }));
+
+    // Pipeline status doughnut: aggregate live candidate counts + apply config colors
+    const candidatesByStatus = candidates.reduce((acc, cand) => {
+      acc[cand.status] = (acc[cand.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const pipelineStatusData = config.pipelineStatusData.map(stage => {
+      let value = 0;
+      if (stage.name === "Applied") value = candidatesByStatus["Applied"] || 0;
+      else if (stage.name === "Screening") value = candidatesByStatus["Screening"] || 0;
+      else if (stage.name === "Interviewing") value = candidatesByStatus["Interviewing"] || 0;
+      else if (stage.name === "Offered/Rejected") value = (candidatesByStatus["Offered"] || 0) + (candidatesByStatus["Rejected"] || 0);
+      return { name: stage.name, value, color: stage.color };
+    });
+
+    return { skillMatchData, pipelineStatusData };
+  }, [candidates, config, stats.totalCandidates]);
 
   // Dynamically compute leaderboard candidate ranking from the candidates state
   const leaderboardCandidates = useMemo(() => {
     const scored = candidates
-      .filter((c) => c.score !== null && c.score !== undefined)
-      .sort((a, b) => (b.score || 0) - (a.score || 0));
+      .filter((c) => c.matchScore !== null && c.matchScore !== undefined)
+      .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
 
     return scored.map((c, index) => {
       const initials = c.name
@@ -460,7 +427,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
         skills = ["Talent Strategy", "Behavioral Interviewing", "ATS Systems", "Onboarding Flows"];
       }
 
-      const scoreVal = c.score || 0;
+      const scoreVal = c.matchScore || 0;
       let status: "Invite Sent" | "Pending" | "Rejected" = "Pending";
       if (scoreVal >= 85) {
         status = "Invite Sent";
@@ -482,19 +449,12 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
 
   // Handles Simulated AI Resume Screening
   const triggerAIScreen = (candidateId: string) => {
-    // Update state to running
-    setCandidates(prev => prev.map(c => {
-      if (c.id === candidateId) {
-        return { ...c, screeningStatus: "running" };
-      }
-      return c;
-    }));
+    setCandidateStage(candidateId, "Awaiting Ranking");
 
     showToast("Agentix AI: ScreenerX is parsing resume & analyzing match compatibility...");
 
-    // Simulate 2.5 second analysis delay
     setTimeout(() => {
-      const calculatedScore = Math.floor(Math.random() * (100 - 75 + 1)) + 75; // Generate score between 75 and 100
+      const calculatedScore = Math.floor(Math.random() * (98 - 70 + 1)) + 70;
       const generatedSummaries = [
         "Highly aligned frontend expertise. Demonstrates proficient TypeScript architectural design and strong Tailwind layout skills.",
         "Solid infrastructure engineering records. Proficient in automated Kubernetes deployment strategies, CI/CD pipes, and AWS security blueprints.",
@@ -502,26 +462,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
       ];
       const randomSummary = generatedSummaries[Math.floor(Math.random() * generatedSummaries.length)];
 
-      setCandidates(prev => prev.map(c => {
-        if (c.id === candidateId) {
-          return {
-            ...c,
-            score: calculatedScore,
-            status: "Screening",
-            summary: randomSummary,
-            screeningStatus: "completed"
-          };
-        }
-        return c;
-      }));
-
-      // Increment tasks completed by Agent
-      setAgents(prev => prev.map(a => {
-        if (a.id === "screener-x") {
-          return { ...a, tasksCompleted: a.tasksCompleted + 1 };
-        }
-        return a;
-      }));
+      updateCandidateScore(candidateId, calculatedScore, randomSummary);
 
       showToast(`Screening complete for ${candidates.find(c => c.id === candidateId)?.name || 'candidate'}. Score: ${calculatedScore}%`);
     }, 2500);
@@ -535,19 +476,17 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
       return;
     }
 
-    const newCand: Candidate = {
+    addCandidate({
       id: Date.now().toString(),
       name: newCandName,
       role: newCandRole,
       department: newCandDept,
       status: "Applied",
-      score: null,
+      matchScore: null,
       appliedDate: new Date().toISOString().split('T')[0],
       email: newCandEmail,
-      screeningStatus: "idle"
-    };
-
-    setCandidates(prev => [newCand, ...prev]);
+      currentStage: "Awaiting Parsing",
+    });
     setIsAddCandidateOpen(false);
     
     // Reset fields
@@ -563,7 +502,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
     e.preventDefault();
     if (!selectedAgentForConfig) return;
 
-    setAgents(prev => prev.map(a => {
+    setAiAgents(prev => prev.map(a => {
       if (a.id === selectedAgentForConfig.id) {
         return selectedAgentForConfig;
       }
@@ -580,7 +519,8 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
     setDiagnosticResult(null);
     setTimeout(() => {
       setDiagnosticRunning(false);
-      setDiagnosticResult("All systems nominal. 4 HR micro-agents responsive. Latency: 12ms. API gateways fully authenticated via Clerk SaaS core.");
+      const agentCount = agents.length;
+      setDiagnosticResult(`All systems nominal. ${plural(agentCount, "HR micro-agent")} responsive. Latency: 12ms. API gateways fully authenticated via Clerk SaaS core.`);
     }, 1800);
   };
 
@@ -600,41 +540,9 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
     showToast("Clerk Session: Logged out successfully.");
   };
 
-  if (currentTab === "landing") {
-    return (
-      <div className="min-h-screen bg-transparent relative">
-        <LandingPage onLaunchDashboard={() => setCurrentTab("dashboard")} />
-        
-        {/* Floating Global Micro Notification System */}
-        <AnimatePresence>
-          {toastMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: 40, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 15, scale: 0.95 }}
-              className="fixed bottom-6 right-6 z-50 max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-4 shadow-xl ring-1 ring-black/5 flex items-start gap-3.5"
-              id="toast-notification"
-            >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">
-                <Bot className="h-4.5 w-4.5" />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs font-semibold text-white">System Notification</p>
-                <p className="text-xs text-slate-400 mt-0.5 leading-normal">{toastMessage}</p>
-              </div>
-              <button onClick={() => setToastMessage(null)} className="text-slate-500 hover:text-slate-300 transition">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased flex flex-col h-screen overflow-hidden">
-      {/* Navbar Integration */}
+    <div className="min-h-screen w-full overflow-x-hidden bg-slate-50 text-slate-900 font-sans antialiased flex flex-col">
+      {/* Navbar Integration - always rendered, full width */}
       <Navbar 
         currentTab={currentTab} 
         setCurrentTab={setCurrentTab}
@@ -643,117 +551,51 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
         onSignOut={handleSignOut}
       />
 
-      {/* App Layout Body */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar Navigation */}
-        <aside className="hidden lg:flex w-60 bg-white border-r border-slate-200 flex-col p-4 flex-none overflow-y-auto">
-          <div className="space-y-1">
-            <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Main Menu</div>
-            <button
-              onClick={() => setCurrentTab("dashboard")}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
-                currentTab === "dashboard" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              <span>Overview</span>
-            </button>
-            <button
-              onClick={() => setCurrentTab("candidates")}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
-                currentTab === "candidates" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              <span>Action Center</span>
-              <span className="ml-auto bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">12</span>
-            </button>
-            <button
-              onClick={() => setCurrentTab("agents")}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
-                currentTab === "agents" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              <span>AI Agents</span>
-              <span className="ml-auto bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-                {agents.filter(a => a.status === "Active").length} Active
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                setCurrentTab("landing");
-                showToast("Returned to Product Landing Showcase");
-              }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left text-indigo-600 hover:bg-indigo-50 hover:text-indigo-900 cursor-pointer"
-            >
-              <Bot className="h-4 w-4" />
-              <span className="font-semibold">SaaS Landing Page</span>
-            </button>
-          </div>
-
-          <div className="mt-8 space-y-1">
-            <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Administration</div>
-            <button
-              onClick={() => {
-                setCurrentTab("dashboard");
-                showToast("Navigated to Organizational Chart");
-              }}
-              className="w-full flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-md text-sm text-left cursor-pointer"
-            >
-              <span>Organizational Chart</span>
-            </button>
-            <button
-              onClick={() => alert("Settings & Config: Manage secure tokens, models, and Clerk user mapping.")}
-              className="w-full flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 hover:text-slate-900 rounded-md text-sm text-left cursor-pointer"
-            >
-              <span>Settings & Config</span>
-            </button>
-          </div>
-
-          <div className="mt-auto border-t border-slate-100 pt-4">
-            <div className="bg-slate-900 text-white p-4 rounded-xl">
-              <div className="text-xs opacity-70 mb-1 font-medium">Pro Plan</div>
-              <div className="text-sm font-bold mb-3">75% of Seats Used</div>
-              <div className="w-full bg-slate-700 h-1 rounded-full mb-3">
-                <div className="bg-blue-400 h-1 w-3/4 rounded-full"></div>
-              </div>
-              <button 
-                onClick={() => alert("Billing Hub: Subscription tier upgrade interface simulated in preview.")}
-                className="w-full py-1.5 bg-white text-slate-900 text-xs font-bold rounded hover:bg-slate-100 cursor-pointer transition-colors"
+      {/* Landing Page - full width, no sidebar */}
+      {currentTab === "landing" ? (
+        <LandingPage onLaunchDashboard={() => setCurrentTab("dashboard")} />
+      ) : (
+        /* App Layout Body with Sidebar */
+        <div className="flex flex-1 overflow-hidden">
+          {/* Sidebar Navigation */}
+          <aside className="hidden md:flex w-60 bg-white border-r border-slate-200 flex-col p-4 flex-none overflow-y-auto">
+            <div className="space-y-1">
+              <div className="px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Main Menu</div>
+              <button
+                onClick={() => setCurrentTab("dashboard")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
+                  currentTab === "dashboard" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                }`}
               >
-                Manage Plan
+                <span>Overview</span>
+              </button>
+
+              <button
+                onClick={() => setCurrentTab("agents")}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition text-left cursor-pointer ${
+                  currentTab === "agents" ? "bg-slate-100 text-slate-900 font-semibold" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <span>AI Agents</span>
+                <span className="ml-auto bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                  {plural(agents.filter(a => a.isRunning).length, "Active Agent")}
+                </span>
               </button>
             </div>
-          </div>
-        </aside>
+          </aside>
 
-        {/* Main Content Area */}
-        <main className="flex-1 p-8 overflow-y-auto">
-          <div className="max-w-6xl mx-auto space-y-8">
+          {/* Main Content Area */}
+          <main className="flex-1 min-w-0 px-4 py-6 md:px-8 overflow-y-auto">
+            <div className="w-full max-w-6xl mx-auto space-y-8">
         
-        {/* Banner with Greeting & Time */}
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              {user ? `${greeting}, ${user.name.split(" ")[0]}!` : "Welcome to Agentix AI"}
-            </h1>
-            <p className="mt-1 text-sm text-slate-500 font-medium">
-              Enterprise automation engine orchestrating hiring pipelines and employee success loops.
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-3 self-start sm:self-center">
-            <span className="font-mono text-xs text-slate-400 bg-slate-100 rounded-lg px-2.5 py-1.5 border border-slate-200">
-              System: Online
-            </span>
-            <button
-              onClick={runSystemDiagnostic}
-              disabled={diagnosticRunning}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-sm focus:outline-none"
-              id="diagnostic-btn"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 text-slate-500 ${diagnosticRunning ? "animate-spin" : ""}`} />
-              <span>{diagnosticRunning ? "Diagnosing..." : "System Diagnostic"}</span>
-            </button>
-          </div>
+        {/* Page Title */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            {currentTab === "dashboard" && "Dashboard"}
+            {currentTab === "agents" && "Agent Control"}
+            {currentTab === "candidates" && "Candidates"}
+            {currentTab === "analytics" && "Analytics"}
+          </h1>
         </div>
 
         {/* Diagnostic Results Display */}
@@ -792,10 +634,10 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
               <div className="space-y-8" id="dashboard-tab">
                 
                 {/* Job Description & CV Upload Split Workspace */}
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6" id="workspace-input-area">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="workspace-input-area">
                   
                   {/* Left Column: Job Description */}
-                  <div className="xl:col-span-5 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+                  <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between mb-3">
                         <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -844,7 +686,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                   </div>
 
                   {/* Right Column: Advanced Bulk Upload Ingestion & Control Hub */}
-                  <div className="xl:col-span-7 space-y-6">
+                  <div className="space-y-6">
                     <BulkUploadZone 
                       onFilesProcessed={(count) => {
                         // Dynamically generate simulated candidate details with matching names
@@ -880,7 +722,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                           <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Candidate Staging Buffer</h4>
                         </div>
                         <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
-                          {stagedCvs.length} CVs Active
+                          {plural(stagedCvs.length, "CV")} Active
                         </span>
                       </div>
 
@@ -1018,7 +860,13 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
 
                 {/* Asynchronous Processing Queue */}
                 <div className="my-2">
-                  <AgentQueue onTriggerToast={showToast} />
+                  <AgentQueue
+                    onTriggerToast={showToast}
+                    onAdvanceStage={(name) => {
+                      const match = candidates.find(c => c.name === name);
+                      if (match) advanceCandidateStage(match.id);
+                    }}
+                  />
                 </div>
 
                 {/* Responsive Grid of Stat Cards */}
@@ -1036,7 +884,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                       <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.totalCandidates}</span>
                       <div className="mt-1.5 flex items-center gap-1 text-xs font-medium text-emerald-600">
                         <TrendingUp className="h-3.5 w-3.5" />
-                        <span>+12% vs last month</span>
+                        <span>{config.candidatesTrend}</span>
                       </div>
                     </div>
                   </div>
@@ -1069,7 +917,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                     <div className="mt-4">
                       <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.highMatchCandidates}</span>
                       <div className="mt-1.5 flex items-center gap-1 text-xs text-slate-500 font-medium">
-                        <span>Score matching &gt;= 90%</span>
+                        <span>Score matching &gt;= {config.highMatchThreshold}%</span>
                       </div>
                     </div>
                   </div>
@@ -1083,7 +931,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                       </div>
                     </div>
                     <div className="mt-4">
-                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.hoursSavedThisMonth} hrs</span>
+                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.hoursSavedThisMonth} {stats.hoursSavedThisMonth === 1 ? "hr" : "hrs"}</span>
                       <div className="mt-1.5 flex items-center gap-1 text-xs font-medium text-emerald-600">
                         <Sparkles className="h-3.5 w-3.5" />
                         <span>Autonomous workflows</span>
@@ -1093,255 +941,16 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
 
                 </div>
 
-                {/* Dashboard Secondary Layout: Two Column layout */}
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                  
-                  {/* Left columns: AI Agent Summary & Activities */}
-                  <div className="lg:col-span-2 space-y-6">
-                    
-                    {/* Active Agents Card List */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3 className="text-base font-bold text-slate-900">Active AI Workspace</h3>
-                          <p className="text-xs text-slate-500">Intelligent background agents dispatching candidate workflows.</p>
-                        </div>
-                        <button 
-                          onClick={() => setCurrentTab("agents")} 
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
-                        >
-                          <span>Manage Agents</span>
-                          <ArrowRight className="h-3 w-3" />
-                        </button>
-                      </div>
-
-                      <div className="divide-y divide-slate-100">
-                        {agents.map((agent) => (
-                          <div key={agent.id} className="flex items-center justify-between py-3.5 first:pt-0 last:pb-0">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 border border-slate-100 text-slate-800">
-                                <Bot className="h-4 w-4" />
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-semibold text-slate-800">{agent.name}</span>
-                                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
-                                    {agent.tag}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-slate-500 truncate max-w-sm sm:max-w-md mt-0.5">
-                                  {agent.description}
-                                </p>
-                              </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-4">
-                              <div className="text-right hidden sm:block">
-                                <p className="text-xs font-semibold text-slate-800">{agent.tasksCompleted} tasks</p>
-                                <p className="text-[10px] text-slate-400 font-medium">{agent.efficiency}</p>
-                              </div>
-                              <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                                agent.status === "Active" 
-                                  ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/10" 
-                                  : agent.status === "Paused"
-                                  ? "bg-rose-50 text-rose-700 ring-1 ring-rose-600/10"
-                                  : "bg-amber-50 text-amber-700 ring-1 ring-amber-600/10"
-                              }`}>
-                                <span className={`mr-1 h-1.5 w-1.5 rounded-full ${
-                                  agent.status === "Active" ? "bg-emerald-500 animate-pulse" : agent.status === "Paused" ? "bg-rose-500" : "bg-amber-500"
-                                }`} />
-                                {agent.status}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Pending Action Pipeline */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3 className="text-base font-bold text-slate-900">Unscreened Candidate Queue</h3>
-                          <p className="text-xs text-slate-500">Run immediate match analysis with ScreenerX model evaluations.</p>
-                        </div>
-                        <button 
-                          onClick={() => setCurrentTab("candidates")}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
-                        >
-                          <span>All Candidates</span>
-                          <ArrowRight className="h-3 w-3" />
-                        </button>
-                      </div>
-
-                      <div className="space-y-3">
-                        {candidates.filter(c => c.score === null).length > 0 ? (
-                          candidates.filter(c => c.score === null).map((cand) => (
-                            <div 
-                              key={cand.id} 
-                              className="flex items-center justify-between p-3.5 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-slate-700 font-bold text-xs uppercase">
-                                  {cand.name.split(" ").map(n => n[0]).join("")}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-800">{cand.name}</p>
-                                  <p className="text-xs text-slate-500">{cand.role} &bull; {cand.department}</p>
-                                </div>
-                              </div>
-
-                              <div>
-                                {cand.screeningStatus === "running" ? (
-                                  <div className="inline-flex items-center gap-1.5 text-xs text-indigo-600 font-semibold bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-1.5">
-                                    <RefreshCw className="h-3 w-3 animate-spin" />
-                                    <span>Screening...</span>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => triggerAIScreen(cand.id)}
-                                    className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-950 hover:bg-slate-100 border border-slate-200 bg-white px-3 py-1.5 rounded-lg transition focus:outline-none shadow-sm"
-                                  >
-                                    <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
-                                    <span>Trigger AI Screen</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-slate-200 rounded-xl">
-                            <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-                            <p className="text-sm font-semibold text-slate-800 mt-2">Zero Pending Reviews</p>
-                            <p className="text-xs text-slate-500 mt-1">ScreenerX has successfully qualified every candidate.</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                  </div>
-
-                  {/* Right side: Insights Panel / Quick Metrics & HR Activity Feed */}
-                  <div className="space-y-6">
-                    
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                      <h3 className="text-base font-bold text-slate-900 mb-4">Pipeline Pipeline Stats</h3>
-                      
-                      {/* Metric chart simulation */}
-                      <div className="space-y-4">
-                        <div>
-                          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                            <span>ScreenerX Qualify Rate</span>
-                            <span className="text-slate-800">74%</span>
-                          </div>
-                          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                            <div className="h-full rounded-full bg-indigo-600" style={{ width: "74%" }} />
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                            <span>Interview Converge Rate</span>
-                            <span className="text-slate-800">42%</span>
-                          </div>
-                          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                            <div className="h-full rounded-full bg-emerald-500" style={{ width: "42%" }} />
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                            <span>Offer Acceptance Rate</span>
-                            <span className="text-slate-800">92%</span>
-                          </div>
-                          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                            <div className="h-full rounded-full bg-amber-500" style={{ width: "92%" }} />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="border-t border-slate-100 my-4 pt-4 text-xs">
-                        <div className="flex items-start gap-2.5">
-                          <AlertCircle className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
-                          <p className="text-slate-500 leading-normal">
-                            Matching rates are computed automatically across your recruitment criteria mapping using local context.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* HR Team Activity Feed */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                      <h3 className="text-base font-bold text-slate-900 mb-4">Live Activities</h3>
-                      <div className="flow-root">
-                        <ul className="-mb-8">
-                          {[
-                            {
-                              id: 1,
-                              content: "ScreenerX calculated score of 96% for",
-                              target: "Sarah Chen",
-                              date: "2 hours ago",
-                              icon: Sparkles,
-                              iconBg: "bg-indigo-50 text-indigo-700 border-indigo-100",
-                            },
-                            {
-                              id: 2,
-                              content: "SchedulerPro dispatched invite to",
-                              target: "Alex Rivera",
-                              date: "5 hours ago",
-                              icon: Calendar,
-                              iconBg: "bg-amber-50 text-amber-700 border-amber-100",
-                            },
-                            {
-                              id: 3,
-                              content: "New candidate added via form link:",
-                              target: "Marcus Vance",
-                              date: "1 day ago",
-                              icon: Users,
-                              iconBg: "bg-slate-50 text-slate-700 border-slate-100",
-                            }
-                          ].map((item, itemIdx) => (
-                            <li key={item.id}>
-                              <div className="relative pb-8">
-                                {itemIdx !== 2 ? (
-                                  <span className="absolute left-4.5 top-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true" />
-                                ) : null}
-                                <div className="relative flex space-x-3">
-                                  <div>
-                                    <span className={`flex h-9 w-9 items-center justify-center rounded-xl border ${item.iconBg}`}>
-                                      <item.icon className="h-4 w-4" aria-hidden="true" />
-                                    </span>
-                                  </div>
-                                  <div className="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
-                                    <div>
-                                      <p className="text-xs text-slate-600 leading-normal">
-                                        {item.content}{" "}
-                                        <span className="font-semibold text-slate-800">{item.target}</span>
-                                      </p>
-                                    </div>
-                                    <div className="whitespace-nowrap text-right text-[10px] font-medium text-slate-400">
-                                      <time>{item.date}</time>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-
-                  </div>
-
-                </div>
-
               </div>
             )}
 
             {/* ----------------- TAB: AI AGENTS ----------------- */}
             {currentTab === "agents" && (
-              <div id="agents-tab">
-                <AgentAnalytics />
+              <div id="agents-tab" className="space-y-6">
+                <div className="border-b border-slate-200 pb-5">
+                  <h2 className="text-xl font-bold text-slate-900">AI Agents Management</h2>
+                </div>
+                <AgentAnalytics mode="agents" bots={agents} onToggleBot={toggleAgent} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
               </div>
             )}
 
@@ -1351,7 +960,6 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-5">
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">Candidate Pipeline Hub</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Track applicants, trigger custom AI qualifications, and inspect candidate scorecard aggregates.</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <button 
@@ -1437,9 +1045,9 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                               </td>
 
                               <td className="whitespace-nowrap px-6 py-4.5 text-center">
-                                {cand.score ? (
+                                  {cand.matchScore ? (
                                   <div className="inline-flex items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 py-1 text-indigo-700 font-mono font-bold">
-                                    {cand.score}%
+                                    {cand.matchScore}%
                                   </div>
                                 ) : (
                                   <span className="text-slate-400 font-medium">Unscreened</span>
@@ -1464,9 +1072,9 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
 
                               <td className="whitespace-nowrap px-6 py-4.5 text-right font-medium">
                                 <div className="flex items-center justify-end gap-2">
-                                  {cand.score === null && (
+                                  {cand.matchScore === null && (
                                     <>
-                                      {cand.screeningStatus === "running" ? (
+                                      {cand.currentStage === "Awaiting Ranking" ? (
                                         <div className="inline-flex items-center gap-1.5 text-indigo-600 font-semibold px-3 py-1.5 bg-indigo-50/50 rounded-lg border border-indigo-100">
                                           <RefreshCw className="h-3 w-3 animate-spin" />
                                           <span>Scanning...</span>
@@ -1483,9 +1091,9 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                                     </>
                                   )}
 
-                                  {cand.score !== null && (
+                                  {cand.matchScore !== null && (
                                     <button
-                                      onClick={() => alert(`ScreenerX Scorecard Analysis:\nCandidate: ${cand.name}\n\nMatching Score: ${cand.score}%\n\nResume Summary: ${cand.summary || 'Matches ideal workforce parameters.'}`)}
+                                      onClick={() => alert(`ScreenerX Scorecard Analysis:\nCandidate: ${cand.name}\n\nMatching Score: ${cand.matchScore}%\n\nResume Summary: ${cand.summary || 'Matches ideal workforce parameters.'}`)}
                                       className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-semibold text-slate-700 hover:bg-slate-50 transition focus:outline-none"
                                     >
                                       <Eye className="h-3.5 w-3.5 text-slate-500" />
@@ -1496,7 +1104,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                                   <button
                                     onClick={() => {
                                       if (confirm(`Remove ${cand.name} from pipeline?`)) {
-                                        setCandidates(prev => prev.filter(c => c.id !== cand.id));
+                                        removeCandidate(cand.id);
                                         showToast(`Removed candidate ${cand.name}.`);
                                       }
                                     }}
@@ -1531,100 +1139,9 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
             {currentTab === "analytics" && (
               <div className="space-y-6" id="analytics-tab">
                 <div className="border-b border-slate-200 pb-5">
-                  <h2 className="text-xl font-bold text-slate-900">Advanced Analytics Dashboard</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Synthesize macro HR trends, time-to-hire matrices, and AI effectiveness scores.</p>
+                  <h2 className="text-xl font-bold text-slate-900">Analytics & Insights</h2>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  
-                  {/* Metric Block */}
-                  <div className="md:col-span-1 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <h3 className="text-sm font-bold text-slate-900 mb-4">Pipeline Distribution</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
-                          <span>Engineering</span>
-                          <span className="text-slate-800">3 Candidates</span>
-                        </div>
-                        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                          <div className="h-full rounded-full bg-indigo-600" style={{ width: "60%" }} />
-                        </div>
-                      </div>
-                      <div>
-                        <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
-                          <span>Product Management</span>
-                          <span className="text-slate-800">1 Candidate</span>
-                        </div>
-                        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                          <div className="h-full rounded-full bg-sky-500" style={{ width: "20%" }} />
-                        </div>
-                      </div>
-                      <div>
-                        <div className="flex justify-between text-xs font-semibold text-slate-500 mb-1">
-                          <span>UX Design</span>
-                          <span className="text-slate-800">1 Candidate</span>
-                        </div>
-                        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                          <div className="h-full rounded-full bg-emerald-500" style={{ width: "20%" }} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Efficiency Block */}
-                  <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900">Interview Cycle Acceleration</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">Visual representation of weekly hiring cycle velocity since SchedulerPro launch.</p>
-                      </div>
-                      <div className="rounded-full bg-emerald-50 border border-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                        84% accelerated
-                      </div>
-                    </div>
-
-                    {/* Simulating high quality graph using simple markup */}
-                    <div className="h-44 flex items-end gap-4 pt-4 border-b border-l border-slate-100 px-2">
-                      {[32, 45, 14, 52, 60, 24, 76, 88, 92, 94].map((height, i) => (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-                          <div 
-                            className="w-full bg-slate-900 rounded-t-md hover:bg-indigo-600 transition duration-200 cursor-pointer relative group" 
-                            style={{ height: `${height}%` }}
-                          >
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-slate-950 text-white rounded-lg px-2 py-1 text-[10px] font-mono whitespace-nowrap z-30 shadow-md">
-                              Week {i+1}: {height} hrs saved
-                            </div>
-                          </div>
-                          <span className="font-mono text-[9px] text-slate-400">W{i+1}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* Additional KPI blocks */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-sm font-bold text-slate-900 mb-4">Autonomous Recruiting Impact</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 text-center">
-                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                      <p className="text-2xl font-bold text-slate-900">4.8 days</p>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-1">Average Time-to-Screen</p>
-                      <span className="text-[10px] text-emerald-600 font-medium inline-block mt-1">Saved 8 days globally</span>
-                    </div>
-                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                      <p className="text-2xl font-bold text-slate-900">92%</p>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-1">Agent Confidence Accuracy</p>
-                      <span className="text-[10px] text-emerald-600 font-medium inline-block mt-1">9.2/10 interviewer alignment</span>
-                    </div>
-                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                      <p className="text-2xl font-bold text-slate-900">$18.4k</p>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-1">External Agency Costs Saved</p>
-                      <span className="text-[10px] text-emerald-600 font-medium inline-block mt-1">Since April 2026 deployment</span>
-                    </div>
-                  </div>
-                </div>
-
+                <AgentAnalytics mode="analytics" bots={agents} onToggleBot={toggleAgent} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
               </div>
             )}
 
@@ -1633,6 +1150,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
           </div>
         </main>
       </div>
+      )}
 
       {/* ----------------- MODAL: ADD CANDIDATE ----------------- */}
       <AnimatePresence>

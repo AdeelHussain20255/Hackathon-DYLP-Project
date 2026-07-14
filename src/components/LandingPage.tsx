@@ -11,8 +11,6 @@ import {
   FileText,
   Sparkles,
   ArrowUpRight,
-  Bell,
-  ChevronDown
 } from "lucide-react";
 import VideoHero from "./VideoHero";
 
@@ -45,95 +43,6 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f015_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f015_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_60%,transparent_100%)] pointer-events-none -z-10" />
 
       <div className="relative z-10">
-        
-        {/* Navigation Navbar (Authenticated Dashboard Layout) */}
-        <header className="w-full bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center relative z-50 shadow-sm">
-          
-          {/* Left Section (Brand) */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900">
-              <Terminal className="h-4 w-4 text-white" strokeWidth={2} />
-            </div>
-            
-            <div className="flex flex-col leading-none">
-              <div className="text-sm font-black tracking-tight flex items-center gap-1">
-                <span className="text-slate-900 font-bold">Agentix</span>
-                <span className="text-slate-500 font-bold">AI</span>
-              </div>
-              <span className="text-[10px] tracking-widest text-slate-400 font-semibold uppercase mt-0.5">
-                HR CORE
-              </span>
-            </div>
-          </div>
-
-          {/* Center Section (Nav Links) */}
-          <nav className="hidden md:flex gap-6 items-center text-sm font-medium text-slate-500">
-            <button 
-              onClick={(e) => { e.preventDefault(); }} 
-              className="bg-slate-100 text-slate-900 px-3 py-1.5 rounded-md hover:bg-slate-200 transition-colors font-semibold cursor-pointer"
-            >
-              Home
-            </button>
-            <button 
-              onClick={onLaunchDashboard} 
-              className="hover:text-slate-900 transition-colors cursor-pointer"
-            >
-              Dashboard
-            </button>
-            <button 
-              onClick={onLaunchDashboard} 
-              className="hover:text-slate-900 transition-colors cursor-pointer"
-            >
-              AI Agents
-            </button>
-            <button 
-              onClick={onLaunchDashboard} 
-              className="hover:text-slate-900 transition-colors cursor-pointer"
-            >
-              Candidates
-            </button>
-            <button 
-              onClick={onLaunchDashboard} 
-              className="hover:text-slate-900 transition-colors cursor-pointer"
-            >
-              Analytics
-            </button>
-          </nav>
-
-          {/* Right Section (User & Notifications) */}
-          <div className="flex items-center gap-4">
-            
-            {/* Bell Notifications */}
-            <button 
-              onClick={() => alert("System status checks clear. Active processing loops running.")}
-              className="relative p-2 text-slate-500 hover:text-slate-800 transition cursor-pointer rounded-full hover:bg-slate-50"
-            >
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-purple-500" />
-            </button>
-
-            {/* User Profile Chip */}
-            <div 
-              onClick={onLaunchDashboard}
-              className="border border-slate-200 rounded-full px-3 py-1.5 flex items-center gap-3 hover:bg-slate-50 transition cursor-pointer shadow-xs bg-white"
-            >
-              <img 
-                src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=facearea&facepad=2&w=80&h=80&q=80" 
-                alt="Adeel Hussain" 
-                className="h-7 w-7 rounded-full object-cover" 
-                referrerPolicy="no-referrer" 
-              />
-              
-              <div className="hidden sm:flex flex-col text-left leading-none">
-                <span className="text-sm font-semibold text-slate-900">Adeel Hussain</span>
-                <span className="text-xs text-slate-500">HR Director</span>
-              </div>
-
-              <ChevronDown className="h-4 w-4 text-slate-400" />
-            </div>
-
-          </div>
-        </header>
 
         {/* Hero Section */}
         <main className="relative z-10 max-w-4xl mx-auto px-6 sm:px-8 pt-24 pb-24 md:pt-32 md:pb-36 text-center space-y-8">

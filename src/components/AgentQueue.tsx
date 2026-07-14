@@ -29,9 +29,15 @@ export interface QueueItem {
 
 interface AgentQueueProps {
   onTriggerToast?: (message: string) => void;
+  onAdvanceStage?: (candidateIdOrName: string) => void;
 }
 
-export default function AgentQueue({ onTriggerToast }: AgentQueueProps) {
+const plural = (count: number, singular: string, pluralForm?: string): string => {
+  const word = count === 1 ? singular : (pluralForm ?? `${singular}s`);
+  return `${count} ${word}`;
+};
+
+export default function AgentQueue({ onTriggerToast, onAdvanceStage }: AgentQueueProps) {
   // 5 initial rows showing files at different stages of the pipeline
   const [items, setItems] = useState<QueueItem[]>([
     {
@@ -169,6 +175,11 @@ export default function AgentQueue({ onTriggerToast }: AgentQueueProps) {
     );
   };
 
+  // Map queue item to a store candidate by name, call onAdvanceStage
+  const syncToStore = (item: QueueItem) => {
+    if (onAdvanceStage) onAdvanceStage(item.candidateName);
+  };
+
   // Manually push selected rows to the next stage
   const handlePushToNextStage = () => {
     if (selectedIds.length === 0) {
@@ -185,10 +196,11 @@ export default function AgentQueue({ onTriggerToast }: AgentQueueProps) {
             nextStage = "Awaiting Ranking";
           } else if (item.stage === "Awaiting Ranking") {
             nextStage = "Ready for Outreach";
-            nextScore = Math.floor(Math.random() * (95 - 75 + 1)) + 75; // Generate score
+            nextScore = Math.floor(Math.random() * (95 - 75 + 1)) + 75;
           } else if (item.stage === "Ready for Outreach") {
             nextStage = "Invite Sent";
           }
+          syncToStore({ ...item, stage: nextStage, score: nextScore ?? item.score });
           return { ...item, stage: nextStage, score: nextScore };
         }
         return item;
@@ -196,7 +208,7 @@ export default function AgentQueue({ onTriggerToast }: AgentQueueProps) {
     );
 
     if (onTriggerToast) {
-      onTriggerToast(`Manually dispatched ${selectedIds.length} candidate(s) to the next pipeline agent node`);
+      onTriggerToast(`Manually dispatched ${plural(selectedIds.length, "candidate")} to the next pipeline agent node`);
     }
     setSelectedIds([]);
     setShowBulkDropdown(false);
@@ -217,6 +229,7 @@ export default function AgentQueue({ onTriggerToast }: AgentQueueProps) {
           } else if (item.stage === "Ready for Outreach") {
             nextStage = "Invite Sent";
           }
+          syncToStore({ ...item, stage: nextStage, score: nextScore ?? item.score });
           return { ...item, stage: nextStage, score: nextScore };
         }
         return item;

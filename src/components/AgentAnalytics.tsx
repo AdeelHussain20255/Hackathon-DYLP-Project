@@ -32,101 +32,84 @@ interface BotState {
   name: string;
   role: string;
   description: string;
-  icon: React.ReactNode;
   isRunning: boolean;
 }
 
-export default function AgentAnalytics() {
-  // 1. Multi-Agent States
-  const [bots, setBots] = useState<BotState[]>([
-    {
-      id: "fetcher",
-      name: "Fetcher Bot",
-      role: "Pulls CVs from external sources",
-      description: "Monitors integrated ATS webhooks, email inboxes, and Shared Folders to auto-ingest candidate CV documents.",
-      icon: <DownloadCloud className="h-5 w-5 text-indigo-600" />,
-      isRunning: true,
-    },
-    {
-      id: "parser",
-      name: "Parser Bot",
-      role: "Extracts JSON data",
-      description: "Parses PDF, DOCX, and unstructured documents into structured JSON AST abstract schemas.",
-      icon: <FileJson className="h-5 w-5 text-blue-600" />,
-      isRunning: true,
-    },
-    {
-      id: "ranker",
-      name: "Ranker Bot",
-      role: "Scores via Gemini",
-      description: "Generates high-dimensional semantic embeddings to match resumes against vectorized job descriptions.",
-      icon: <Cpu className="h-5 w-5 text-amber-600" />,
-      isRunning: true,
-    },
-    {
-      id: "scheduler",
-      name: "Scheduler Bot",
-      role: "Fires emails",
-      description: "Dispatches automated interview invites and updates calendars autonomously for matching candidates.",
-      icon: <Send className="h-5 w-5 text-emerald-600" />,
-      isRunning: false,
-    },
-  ]);
+interface CandidateData {
+  id: string;
+  name: string;
+  status: string;
+  matchScore: number | null;
+}
 
-  const handleToggleBot = (id: string) => {
-    setBots(prev =>
-      prev.map(bot =>
-        bot.id === id ? { ...bot, isRunning: !bot.isRunning } : bot
-      )
-    );
+interface ChartData {
+  skillMatchData: { name: string; Count: number; color: string }[];
+  pipelineStatusData: { name: string; value: number; color: string }[];
+}
+
+interface AgentAnalyticsProps {
+  mode?: "agents" | "analytics";
+  bots: BotState[];
+  onToggleBot: (id: string) => void;
+  candidates?: CandidateData[];
+  /** Overrides the hardcoded processing time ms value — sourced from dashboardConfig */
+  processingTimeMs?: number;
+  /** Overrides the hardcoded trend badge on the Total CVs KPI — sourced from dashboardConfig */
+  cvProcessedTrend?: string;
+  /** Chart data sourced from dashboardConfig + live candidate state */
+  chartData?: ChartData;
+}
+
+export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, candidates = [], processingTimeMs, cvProcessedTrend, chartData }: AgentAnalyticsProps) {
+  // Calculate dynamic analytics from actual candidate data
+  const totalCvs = candidates.length;
+  const avgMatchScore = candidates.length > 0 
+    ? Math.round((candidates.reduce((sum, c) => sum + (c.matchScore || 0), 0) / candidates.length) * 10) / 10
+    : 0;
+  // Use prop value if provided, otherwise fall back to default
+  const processingTime = processingTimeMs ?? (candidates.length > 0 ? 380 : 0);
+  const trendBadge = cvProcessedTrend ?? "+12.4%";
+
+  const getBotIcon = (id: string, isRunning: boolean) => {
+    const color = isRunning ? "text-indigo-600" : "text-slate-400";
+    if (id === "fetcher") return <Bot className={`h-5 w-5 ${color}`} />;
+    if (id === "parser") return <Bot className={`h-5 w-5 text-blue-600`} />;
+    if (id === "ranker") return <Bot className={`h-5 w-5 text-amber-600`} />;
+    return <Bot className={`h-5 w-5 text-emerald-600`} />;
   };
 
-  // 2. Mock Analytics Data
-  const totalCvs = 1428;
-  const avgMatchScore = 82.4;
-  const processingTime = 380;
-
-  // 3. Chart Data
-  const skillMatchData = [
-    { name: "React 19", Count: 88, color: "#4f46e5" },
-    { name: "TypeScript", Count: 82, color: "#6366f1" },
-    { name: "Tailwind CSS", Count: 91, color: "#3b82f6" },
-    { name: "Node.js", Count: 68, color: "#06b6d4" },
-    { name: "DevOps/AWS", Count: 45, color: "#10b981" },
-    { name: "Product Design", Count: 38, color: "#f59e0b" },
+  // Use chartData from props if provided, otherwise compute locally as fallback
+  const skillMatchData = chartData?.skillMatchData ?? [
+    { name: "React 19", Count: 1, color: "#4f46e5" },
   ];
-
-  const pipelineStatusData = [
-    { name: "Fetched", value: 340, color: "#6366f1" },
-    { name: "Parsed", value: 280, color: "#3b82f6" },
-    { name: "Invited", value: 110, color: "#10b981" },
-    { name: "Other/Rejected", value: 50, color: "#94a3b8" },
+  const pipelineStatusData = chartData?.pipelineStatusData ?? [
+    { name: "Applied", value: 0, color: "#6366f1" },
   ];
 
   return (
     <div className="space-y-8" id="agent-orchestration-workspace">
-      {/* Introduction Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Bot className="h-5.5 w-5.5 text-indigo-600" />
-            Agent Orchestration &amp; Advanced Analytics
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Configure core autonomous micro-services, track semantic classification pipelines, and audit execution time parameters.
-          </p>
-        </div>
+      {/* Introduction Header - Only show in agents mode */}
+      {mode === "agents" && (
+        <>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                <Bot className="h-5.5 w-5.5 text-indigo-600" />
+                Agent Orchestration &amp; Advanced Analytics
+              </h2>
 
-        <div className="flex items-center gap-2 self-start md:self-center">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-            <Zap className="h-3.5 w-3.5 text-indigo-500 fill-indigo-100" />
-            <span>Autonomous Mode: Enabled</span>
-          </span>
-        </div>
-      </div>
+            </div>
 
-      {/* Grid: Toggles and Analytics KPI Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="flex items-center gap-2 self-start md:self-center">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                <Zap className="h-3.5 w-3.5 text-indigo-500 fill-indigo-100" />
+                <span>Autonomous Mode: Enabled</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Grid: Toggles and Analytics KPI Panel - Only show in agents mode */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* LEFT COLUMN: Multi-Agent Control Panel (7 cols) */}
         <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between" id="agent-control-panel-card">
@@ -138,9 +121,7 @@ export default function AgentAnalytics() {
               </h3>
               <span className="text-[10px] text-slate-400 font-mono">ScreenerX Engine v2.4</span>
             </div>
-            <p className="text-xs text-slate-500 mb-6">
-              Safeguard pipeline throughput. Pause or activate specific autonomous micro-services below without interrupting other threads.
-            </p>
+
 
             <div className="space-y-4">
               {bots.map((bot) => (
@@ -158,7 +139,7 @@ export default function AgentAnalytics() {
                         ? "bg-slate-50 border-slate-200" 
                         : "bg-slate-100/50 border-slate-100 text-slate-400"
                     }`}>
-                      {bot.icon}
+                      {getBotIcon(bot.id, bot.isRunning)}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
@@ -172,7 +153,7 @@ export default function AgentAnalytics() {
                   {/* Custom Toggle Switch */}
                   <div className="flex flex-col items-end gap-2 shrink-0">
                     <button
-                      onClick={() => handleToggleBot(bot.id)}
+                      onClick={() => onToggleBot(bot.id)}
                       className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                         bot.isRunning ? "bg-indigo-600" : "bg-slate-200"
                       }`}
@@ -215,12 +196,12 @@ export default function AgentAnalytics() {
           {/* KPI 1: Total CVs Processed */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex items-center justify-between relative overflow-hidden group">
             <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total CVs Processed</span>
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total {totalCvs === 1 ? "CV" : "CVs"} Processed</span>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-extrabold text-slate-900 tracking-tight">{totalCvs.toLocaleString()}</span>
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
                   <TrendingUp className="h-2.5 w-2.5" />
-                  +12.4%
+                  {trendBadge}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">Autonomous processing volume since indexing launch.</p>
@@ -278,8 +259,11 @@ export default function AgentAnalytics() {
 
         </div>
       </div>
+        </>
+      )}
 
-      {/* Grid: Charts Section */}
+      {/* Grid: Charts Section - Only show in analytics mode */}
+      {mode === "analytics" && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="dashboard-advanced-visualizers">
         
         {/* Visualizer 1: Skill Match Distribution (Bar Chart) */}
@@ -396,6 +380,7 @@ export default function AgentAnalytics() {
         </div>
 
       </div>
+      )}
 
       {/* Footer Audit Statement */}
       <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">
