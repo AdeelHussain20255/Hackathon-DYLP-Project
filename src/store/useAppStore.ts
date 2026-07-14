@@ -24,9 +24,19 @@ export interface Agent {
   isRunning: boolean;
 }
 
+export interface DashboardConfig {
+  candidatesTrend: string;
+  highMatchThreshold: number;
+  cvProcessedTrend: string;
+  processingTimeMs: number;
+  skillMatchData: { name: string; weight: number; color: string }[];
+  pipelineStatusData: { name: string; color: string }[];
+}
+
 interface AppState {
   candidates: Candidate[];
   agents: Agent[];
+  config: DashboardConfig;
 
   addCandidate: (candidate: Candidate) => void;
   removeCandidate: (id: string) => void;
@@ -105,9 +115,31 @@ const initialAgents: Agent[] = [
   { id: "scheduler", name: "Scheduler Bot", role: "Fires emails", description: "Dispatches automated interview invites and updates calendars autonomously for matching candidates.", isRunning: false },
 ];
 
+const initialConfig: DashboardConfig = {
+  candidatesTrend:   "+12% vs last month",
+  highMatchThreshold: 90,
+  cvProcessedTrend:  "+12.4%",
+  processingTimeMs:  380,
+  skillMatchData: [
+    { name: "React 19", weight: 0.061, color: "#4f46e5" },
+    { name: "TypeScript", weight: 0.057, color: "#6366f1" },
+    { name: "Tailwind CSS", weight: 0.064, color: "#3b82f6" },
+    { name: "Node.js", weight: 0.048, color: "#06b6d4" },
+    { name: "DevOps/AWS", weight: 0.032, color: "#10b981" },
+    { name: "Product Design", weight: 0.027, color: "#f59e0b" },
+  ],
+  pipelineStatusData: [
+    { name: "Applied", color: "#6366f1" },
+    { name: "Screening", color: "#3b82f6" },
+    { name: "Interviewing", color: "#10b981" },
+    { name: "Offered/Rejected", color: "#94a3b8" },
+  ],
+};
+
 export const useAppStore = create<AppState>((set) => ({
   candidates: initialCandidates,
   agents: initialAgents,
+  config: initialConfig,
 
   addCandidate: (candidate) =>
     set((state) => ({ candidates: [candidate, ...state.candidates] })),

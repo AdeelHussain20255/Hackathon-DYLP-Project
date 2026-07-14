@@ -1,6 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { GoogleGenAI } from "@google/genai";
-import dashboardConfig, { type DashboardConfig } from "./data/dashboardConfig";
 import { useAppStore } from "./store/useAppStore";
 import { 
   Bot, Sparkles, Search, Plus, Filter, CheckCircle2, Clock, 
@@ -63,13 +62,7 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Dashboard config state — seeded from dashboardConfig.ts.
-  // Changing a value in that file causes a hot-reload which re-runs this effect.
-  const [config, setConfig] = useState<DashboardConfig>(dashboardConfig);
-  useEffect(() => {
-    setConfig(dashboardConfig);
-  }, []); // runs once on mount; HMR re-executes the module, which re-runs the effect
-
+  const config = useAppStore((s) => s.config);
   const candidates = useAppStore((s) => s.candidates);
   const agents = useAppStore((s) => s.agents);
   const addCandidate = useAppStore((s) => s.addCandidate);

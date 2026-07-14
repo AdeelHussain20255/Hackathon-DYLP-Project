@@ -27,6 +27,11 @@ interface BulkUploadZoneProps {
   showToast?: (message: string) => void;
 }
 
+const plural = (count: number, singular: string, pluralForm?: string): string => {
+  const word = count === 1 ? singular : (pluralForm ?? `${singular}s`);
+  return `${count} ${word}`;
+};
+
 export default function BulkUploadZone({ onFilesProcessed, showToast }: BulkUploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isForceFetching, setIsForceFetching] = useState(false);
@@ -90,7 +95,7 @@ export default function BulkUploadZone({ onFilesProcessed, showToast }: BulkUplo
   const simulateFileUploads = (filesToUpload: StagedFile[]) => {
     let currentCompleted = 0;
     const total = filesToUpload.length;
-    setUploadingMessage(`Uploading 0 of ${total} files...`);
+    setUploadingMessage(`Uploading 0 of ${plural(total, "file")}...`);
 
     const interval = setInterval(() => {
       setUploadingFiles(prev => {
@@ -109,14 +114,14 @@ export default function BulkUploadZone({ onFilesProcessed, showToast }: BulkUplo
         });
 
         const completedCount = updated.filter(f => f.status === "completed").length;
-        setUploadingMessage(`Uploading ${completedCount} of ${total} files...`);
+        setUploadingMessage(`Uploading ${completedCount} of ${plural(total, "file")}...`);
         setUploadProgressPercent(Math.round((completedCount / total) * 100));
 
         if (allCompleted) {
           clearInterval(interval);
           setTimeout(() => {
             if (showToast) {
-              showToast(`Successfully uploaded & indexed ${total} resumes into candidate pool!`);
+              showToast(`Successfully uploaded & indexed ${plural(total, "resume")} into candidate pool!`);
             }
             if (onFilesProcessed) {
               onFilesProcessed(total);
@@ -142,7 +147,7 @@ export default function BulkUploadZone({ onFilesProcessed, showToast }: BulkUplo
       setIsForceFetching(false);
       const randomFetchCount = Math.floor(Math.random() * 3) + 2; // 2 to 4 files
       if (showToast) {
-        showToast(`Fetcher Bot Completed! Synced and downloaded ${randomFetchCount} new resumes.`);
+        showToast(`Fetcher Bot Completed! Synced and downloaded ${plural(randomFetchCount, "new resume")}.`);
       }
 
       // Automatically stage the fetched resumes for processing
@@ -339,7 +344,7 @@ export default function BulkUploadZone({ onFilesProcessed, showToast }: BulkUplo
               ))}
               {uploadingFiles.length > 6 && (
                 <div className="p-2 rounded-lg border border-dashed border-slate-200/80 bg-slate-100/30 text-[10px] text-slate-400 flex items-center justify-center font-medium">
-                  + {uploadingFiles.length - 6} more documents processing
+                  + {uploadingFiles.length - 6} more {uploadingFiles.length - 6 === 1 ? "document" : "documents"} processing
                 </div>
               )}
             </div>
