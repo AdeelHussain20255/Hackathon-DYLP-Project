@@ -45,7 +45,7 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
       <div className="relative z-10">
 
         {/* Hero Section */}
-        <main className="relative z-10 max-w-4xl mx-auto px-6 sm:px-8 pt-24 pb-24 md:pt-32 md:pb-36 text-center space-y-8">
+        <main className="relative z-10 max-w-4xl mx-auto px-6 sm:px-8 pt-16 pb-16 md:pt-24 md:pb-24 text-center space-y-6 md:space-y-8">
           
           {/* Subtle Tagline - Colored Sky to complement the video's glowing circuit particles */}
           <div className="inline-flex items-center gap-1.5 rounded-full bg-sky-50/80 border border-sky-100/80 px-3.5 py-1.5 text-xs font-semibold text-sky-700 backdrop-blur-sm">
@@ -87,10 +87,10 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
         </main>
 
         {/* Bento Box Features Section */}
-        <section id="features" className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8 py-20 md:py-24 mb-16">
+        <section id="features" className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8 py-12 md:py-20 mb-8 md:mb-12">
           
           {/* Section Heading */}
-          <div className="max-w-3xl mb-16 space-y-3">
+          <div className="max-w-3xl mb-8 md:mb-12 space-y-3">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50/80 border border-sky-100 px-3 py-1 text-xs font-semibold text-sky-700 backdrop-blur-sm">
               <Layers className="h-3.5 w-3.5 text-sky-500" />
               Platform Capabilities
@@ -113,7 +113,7 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
               whileInView="visible"
               viewport={{ once: true, margin: "-80px" }}
               whileHover={{ y: -5 }}
-              className="md:col-span-2 group relative rounded-2xl bg-white/70 border border-slate-200/80 p-8 flex flex-col justify-between overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md hover:bg-white"
+              className="md:col-span-2 group relative rounded-2xl bg-white/70 border border-slate-200/80 p-6 md:p-8 flex flex-col justify-between overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md hover:bg-white"
             >
               <div className="absolute inset-0 bg-gradient-to-br from-sky-50/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               
@@ -166,7 +166,7 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
               whileInView="visible"
               viewport={{ once: true, margin: "-80px" }}
               whileHover={{ y: -5 }}
-              className="md:col-span-1 group relative rounded-2xl bg-white/70 border border-slate-200/80 p-8 flex flex-col justify-between overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md hover:bg-white"
+              className="md:col-span-1 group relative rounded-2xl bg-white/70 border border-slate-200/80 p-6 md:p-8 flex flex-col justify-between overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md hover:bg-white"
             >
               <div className="absolute inset-0 bg-gradient-to-br from-sky-50/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               
@@ -206,7 +206,7 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
               whileInView="visible"
               viewport={{ once: true, margin: "-80px" }}
               whileHover={{ y: -5 }}
-              className="md:col-span-1 group relative rounded-2xl bg-white/70 border border-slate-200/80 p-8 flex flex-col justify-between overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md hover:bg-white"
+              className="md:col-span-1 group relative rounded-2xl bg-white/70 border border-slate-200/80 p-6 md:p-8 flex flex-col justify-between overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md hover:bg-white"
             >
               <div className="absolute inset-0 bg-gradient-to-br from-sky-50/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               
@@ -248,7 +248,7 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
               whileInView="visible"
               viewport={{ once: true, margin: "-80px" }}
               whileHover={{ y: -5 }}
-              className="md:col-span-2 group relative rounded-2xl bg-white/70 border border-slate-200/80 p-8 flex flex-col justify-between overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md hover:bg-white"
+              className="md:col-span-2 group relative rounded-2xl bg-white/70 border border-slate-200/80 p-6 md:p-8 flex flex-col justify-between overflow-hidden shadow-sm backdrop-blur-md transition-all duration-300 hover:shadow-md hover:bg-white"
             >
               <div className="absolute inset-0 bg-gradient-to-br from-sky-50/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               
@@ -290,8 +290,8 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
         </section>
 
         {/* Call to Action Section */}
-        <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8 py-16">
-          <div className="max-w-5xl mx-auto overflow-hidden rounded-3xl border border-slate-200 bg-white/70 backdrop-blur-md p-12 md:p-16 text-center shadow-sm relative">
+        <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8 py-10 md:py-16">
+          <div className="max-w-5xl mx-auto overflow-hidden rounded-3xl border border-slate-200 bg-white/70 backdrop-blur-md p-8 md:p-12 text-center shadow-sm relative">
             <div className="absolute inset-0 bg-gradient-to-br from-sky-50/20 to-transparent pointer-events-none" />
             
             <div className="relative z-10 max-w-2xl mx-auto space-y-6">
@@ -334,97 +334,35 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
           </div>
         </section>
 
-        {/* Minimalist, Light Enterprise-Style Footer */}
-        <footer className="relative z-10 w-full bg-white/80 border-t border-slate-200 backdrop-blur-md font-sans mt-24">
-          <div className="max-w-7xl mx-auto px-6 sm:px-8 pt-16 pb-12">
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-10 items-start pb-12 border-b border-slate-200/80">
+        {/* Compact Footer */}
+        <footer className="relative z-10 w-full bg-white/80 border-t border-slate-200 backdrop-blur-md font-sans mt-8 md:mt-12">
+          <div className="max-w-7xl mx-auto px-6 sm:px-8 py-6 md:py-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-200/80">
               
-              {/* Logo block */}
-              <div className="md:col-span-5 space-y-4">
-                <div className="flex items-center">
-                  <span className="text-lg font-black tracking-tight text-slate-900 flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
-                    Agentix AI
-                  </span>
-                </div>
-                <p className="text-slate-500 text-xs leading-relaxed max-w-sm font-medium">
-                  Deploying secure, high-precision autonomous software agent networks to automate candidate screening, evaluation, and scheduler workflows globally.
-                </p>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
+                  Agentix AI
+                </span>
+                <span className="text-[11px] text-slate-400 max-w-xs leading-relaxed hidden sm:block">
+                  Deploying secure, high-precision autonomous agent networks for recruitment workflows.
+                </span>
               </div>
 
-              {/* Minimalist Footer Links */}
-              <div className="md:col-span-7 grid grid-cols-3 gap-6 md:justify-items-end">
-                <div>
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3.5 font-mono">RESOURCES</h4>
-                  <ul className="space-y-2.5 text-xs font-semibold">
-                    <li>
-                      <a 
-                        href="#" 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          alert("Opening local technical documentation for recruitment loop triggers.");
-                        }} 
-                        className="text-slate-600 hover:text-sky-600 transition-colors flex items-center gap-1"
-                      >
-                        Documentation <ArrowUpRight className="h-3 w-3 text-slate-400" />
-                      </a>
-                    </li>
-                  </ul>
-                </div>
-
-                <div>
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3.5 font-mono">PLATFORM</h4>
-                  <ul className="space-y-2.5 text-xs font-semibold">
-                    <li>
-                      <a 
-                        href="#" 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onLaunchDashboard();
-                        }} 
-                        className="text-slate-600 hover:text-sky-600 transition-colors"
-                      >
-                        Launch Dashboard
-                      </a>
-                    </li>
-                    <li>
-                      <a 
-                        href="#" 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          alert("Vite SPA Hydrated with Express 4 backend loop on port 3000.");
-                        }} 
-                        className="text-slate-600 hover:text-sky-600 transition-colors flex items-center gap-1"
-                      >
-                        Architecture <ArrowUpRight className="h-3 w-3 text-slate-400" />
-                      </a>
-                    </li>
-                  </ul>
-                </div>
-
-                <div>
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3.5 font-mono">COMPANY</h4>
-                  <ul className="space-y-2.5 text-xs font-semibold">
-                    <li>
-                      <a 
-                        href="#" 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          alert("Agentix Core Engineers & Autonomous Workflow loops.");
-                        }} 
-                        className="text-slate-600 hover:text-sky-600 transition-colors flex items-center gap-1"
-                      >
-                        Team <ArrowUpRight className="h-3 w-3 text-slate-400" />
-                      </a>
-                    </li>
-                  </ul>
-                </div>
+              <div className="flex items-center gap-6">
+                <a href="#" onClick={(e) => { e.preventDefault(); alert("Opening local technical documentation for recruitment loop triggers."); }} className="text-[11px] font-semibold text-slate-500 hover:text-sky-600 transition-colors flex items-center gap-1">
+                  Documentation <ArrowUpRight className="h-3 w-3" />
+                </a>
+                <a href="#" onClick={(e) => { e.preventDefault(); onLaunchDashboard(); }} className="text-[11px] font-semibold text-slate-500 hover:text-sky-600 transition-colors">
+                  Launch Dashboard
+                </a>
+                <a href="#" onClick={(e) => { e.preventDefault(); alert("Agentix Core Engineers & Autonomous Workflow loops."); }} className="text-[11px] font-semibold text-slate-500 hover:text-sky-600 transition-colors flex items-center gap-1">
+                  Team <ArrowUpRight className="h-3 w-3" />
+                </a>
               </div>
-
             </div>
 
-            {/* Bottom copyright and metadata bar */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 text-[11px] text-slate-400 font-semibold">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 text-[11px] text-slate-400">
               <div className="flex items-center gap-2">
                 <span>&copy; 2026 Agentix AI Inc. All rights reserved.</span>
                 <span className="h-3 w-[1px] bg-slate-200" />
@@ -434,9 +372,9 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
                 </span>
               </div>
 
-              <div className="flex items-center gap-6">
-                <a href="#" onClick={(e) => { e.preventDefault(); alert("Agentix Terms of Use."); }} className="hover:text-slate-600 transition text-slate-400">Terms</a>
-                <a href="#" onClick={(e) => { e.preventDefault(); alert("Agentix Privacy policy."); }} className="hover:text-slate-600 transition text-slate-400">Privacy</a>
+              <div className="flex items-center gap-4">
+                <a href="#" onClick={(e) => { e.preventDefault(); alert("Agentix Terms of Use."); }} className="hover:text-slate-500 transition">Terms</a>
+                <a href="#" onClick={(e) => { e.preventDefault(); alert("Agentix Privacy policy."); }} className="hover:text-slate-500 transition">Privacy</a>
               </div>
             </div>
           </div>

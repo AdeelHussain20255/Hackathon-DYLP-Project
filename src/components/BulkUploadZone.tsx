@@ -187,12 +187,7 @@ export default function BulkUploadZone({ onFilesProcessed, showToast }: BulkUplo
         
         {/* Left Side: Manual Bulk Upload Area */}
         <div className="p-6 space-y-4">
-          <div>
-            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-1">Manual Bulk Upload</h4>
-            <p className="text-[11px] text-slate-500 leading-normal">
-              Stage massive batches of candidate resumes directly. Documents are parsed instantly and streamed to the screening queues.
-            </p>
-          </div>
+          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Manual Bulk Upload</h4>
 
           <div
             onDragOver={handleDragOver}

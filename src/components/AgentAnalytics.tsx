@@ -93,11 +93,10 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, can
         <>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                <Bot className="h-5.5 w-5.5 text-indigo-600" />
+              <p className="text-xs text-slate-500 flex items-center gap-2">
+                <Bot className="h-4 w-4 text-indigo-400" />
                 Agent Orchestration &amp; Advanced Analytics
-              </h2>
-
+              </p>
             </div>
 
             <div className="flex items-center gap-2 self-start md:self-center">
@@ -142,7 +141,7 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, can
                       {getBotIcon(bot.id, bot.isRunning)}
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2">
                         <span className="font-bold text-sm text-slate-900">{bot.name}</span>
                         <span className="text-[10px] font-medium text-slate-400 font-mono">({bot.role})</span>
                       </div>

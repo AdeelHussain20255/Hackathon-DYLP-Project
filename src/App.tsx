@@ -2,8 +2,8 @@ import React, { useState, useMemo } from "react";
 import { GoogleGenAI } from "@google/genai";
 import { useAppStore } from "./store/useAppStore";
 import { 
-  Bot, Sparkles, Search, Plus, Filter, CheckCircle2, Clock, 
-  TrendingUp, Users, FileText, Sliders, Eye, RefreshCw, 
+  Bot, Sparkles, Search, Plus, Filter, CheckCircle2, 
+  FileText, Sliders, Eye, RefreshCw, 
   AlertCircle, UserCheck, Trash2, Check, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -705,16 +705,23 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
 
           {/* Main Content Area - full width */}
           <main className="flex-1 min-w-0 px-4 py-6 md:px-8 overflow-y-auto">
-            <div className="w-full max-w-6xl mx-auto space-y-8">
+            <div className="w-full max-w-6xl mx-auto space-y-6 md:space-y-8">
         
         {/* Page Title */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            {currentTab === "dashboard" && "Dashboard"}
-            {currentTab === "agents" && "Agent Control"}
-            {currentTab === "candidates" && "Candidates"}
-            {currentTab === "analytics" && "Analytics"}
-          </h1>
+        <div className="mb-6 md:mb-8">
+          {currentTab === "agents" ? (
+            <div>
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Agent Control</span>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl mt-1">AI Agents Management</h1>
+              <p className="text-xs text-slate-500 mt-1.5">Agent Orchestration &amp; Advanced Analytics</p>
+            </div>
+          ) : (
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+              {currentTab === "dashboard" && "Dashboard"}
+              {currentTab === "candidates" && "Candidates"}
+              {currentTab === "analytics" && "Analytics"}
+            </h1>
+          )}
         </div>
 
         {/* Diagnostic Results Display */}
@@ -750,7 +757,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
             
             {/* ----------------- TAB: DASHBOARD ----------------- */}
             {currentTab === "dashboard" && (
-              <div className="space-y-8" id="dashboard-tab">
+              <div className="space-y-6 md:space-y-8" id="dashboard-tab">
                 
                 {/* Job Description & CV Upload Split Workspace */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="workspace-input-area">
@@ -987,87 +994,12 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                   />
                 </div>
 
-                {/* Responsive Grid of Stat Cards */}
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-                  
-                  {/* Stat Card 1 */}
-                  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition duration-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Candidates</span>
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 border border-slate-100 text-slate-700">
-                        <Users className="h-5 w-5" />
-                      </div>
-                    </div>
-                    <div className="mt-4">
-                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.totalCandidates}</span>
-                      <div className="mt-1.5 flex items-center gap-1 text-xs font-medium text-emerald-600">
-                        <TrendingUp className="h-3.5 w-3.5" />
-                        <span>{config.candidatesTrend}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Stat Card 2 */}
-                  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition duration-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active AI Agents</span>
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100/50 text-emerald-700">
-                        <Bot className="h-5 w-5" />
-                      </div>
-                    </div>
-                    <div className="mt-4">
-                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.activeAIAgents}</span>
-                      <div className="mt-1.5 flex items-center gap-1 text-xs text-slate-500 font-medium">
-                        <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>All systems healthy</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Stat Card 3 */}
-                  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition duration-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">High Match Pool</span>
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100/50 text-indigo-700">
-                        <UserCheck className="h-5 w-5" />
-                      </div>
-                    </div>
-                    <div className="mt-4">
-                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.highMatchCandidates}</span>
-                      <div className="mt-1.5 flex items-center gap-1 text-xs text-slate-500 font-medium">
-                        <span>Score matching &gt;= {config.highMatchThreshold}%</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Stat Card 4 */}
-                  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition duration-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Hours Saved (Est.)</span>
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 border border-amber-100/50 text-amber-700">
-                        <Clock className="h-5 w-5" />
-                      </div>
-                    </div>
-                    <div className="mt-4">
-                      <span className="text-3xl font-bold tracking-tight text-slate-900">{stats.hoursSavedThisMonth} {stats.hoursSavedThisMonth === 1 ? "hr" : "hrs"}</span>
-                      <div className="mt-1.5 flex items-center gap-1 text-xs font-medium text-emerald-600">
-                        <Sparkles className="h-3.5 w-3.5" />
-                        <span>Autonomous workflows</span>
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-
               </div>
             )}
 
             {/* ----------------- TAB: AI AGENTS ----------------- */}
             {currentTab === "agents" && (
               <div id="agents-tab" className="space-y-6">
-                <div className="border-b border-slate-200 pb-5">
-                  <h2 className="text-xl font-bold text-slate-900">AI Agents Management</h2>
-                </div>
                 <AgentAnalytics mode="agents" bots={agents} onToggleBot={toggleAgent} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
               </div>
             )}
@@ -1076,8 +1008,11 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
             {currentTab === "candidates" && (
               <div className="space-y-6" id="candidates-tab">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-5">
-                  <div>
+                  <div className="flex items-center gap-3">
                     <h2 className="text-xl font-bold text-slate-900">Candidate Pipeline Hub</h2>
+                    <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200/50 px-2.5 py-0.5 rounded-full">
+                      {candidates.length} {candidates.length === 1 ? "Candidate" : "Candidates"}
+                    </span>
                   </div>
                   <div className="flex items-center gap-3">
                     <button 
@@ -1124,9 +1059,8 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                 </div>
 
                 {/* Candidate Table Layout */}
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-100 text-left">
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <table className="min-w-full divide-y divide-slate-100 text-left">
                       <thead className="bg-slate-50/70 font-sans text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                         <tr>
                           <th className="px-6 py-3.5">Candidate Details</th>
@@ -1237,7 +1171,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                            <td colSpan={6} className="px-6 py-8 md:py-12 text-center text-slate-500">
                               <div className="flex flex-col items-center justify-center">
                                 <Search className="h-8 w-8 text-slate-300 mb-2" />
                                 <p className="text-sm font-semibold text-slate-700">No candidates found</p>
@@ -1248,7 +1182,6 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                         )}
                       </tbody>
                     </table>
-                  </div>
                 </div>
               </div>
             )}
