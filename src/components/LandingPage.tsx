@@ -1,5 +1,5 @@
 import React from "react";
-import { motion } from "motion/react";
+import { motion } from "framer-motion";
 import { 
   ArrowRight, 
   Cpu, 
@@ -13,6 +13,8 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import VideoHero from "./VideoHero";
+import { BackgroundPathsWrapper } from "./BackgroundPaths";
+import { InfiniteGridWrapper } from "./InfiniteGridBackground";
 
 interface LandingPageProps {
   onLaunchDashboard: () => void;
@@ -42,49 +44,73 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
       {/* Grid Overlay for extra design depth */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f015_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f015_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_60%,transparent_100%)] pointer-events-none -z-10" />
 
-      <div className="relative z-10">
+      <div className="relative z-20">
 
         {/* Hero Section */}
-        <main className="relative z-10 max-w-4xl mx-auto px-6 sm:px-8 pt-16 pb-16 md:pt-24 md:pb-24 text-center space-y-6 md:space-y-8">
-          
-          {/* Subtle Tagline - Colored Sky to complement the video's glowing circuit particles */}
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-sky-50/80 border border-sky-100/80 px-3.5 py-1.5 text-xs font-semibold text-sky-700 backdrop-blur-sm">
-            <Sparkles className="h-3.5 w-3.5 text-sky-500 animate-pulse" />
-            <span>Autonomous Candidate Orchestration</span>
+        <section className="relative min-h-[90vh] w-full flex items-center justify-center overflow-hidden bg-white">
+          <BackgroundPathsWrapper />
+
+          <div className="relative z-10 text-center max-w-4xl mx-auto px-4 space-y-6 md:space-y-8">
+            
+            {/* Subtle Tagline */}
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-sky-50/80 border border-sky-100/80 px-3.5 py-1.5 text-xs font-semibold text-sky-700 backdrop-blur-sm">
+              <Sparkles className="h-3.5 w-3.5 text-sky-500 animate-pulse" />
+              <span>Autonomous Candidate Orchestration</span>
+            </div>
+
+            {/* Animated Headline */}
+            <h1 className="flex flex-wrap items-center justify-center gap-x-3">
+              {"Hire Smarter, Not Harder with Autonomous AI.".split(" ").map((word, wordIndex) => (
+                <span key={wordIndex} className="inline-flex">
+                  {word.split("").map((letter, letterIndex) => (
+                    <motion.span
+                      key={letterIndex}
+                      initial={{ y: 60, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 150,
+                        damping: 25,
+                        delay: wordIndex * 0.1 + letterIndex * 0.03,
+                      }}
+                      className="inline-block text-5xl sm:text-7xl md:text-8xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-neutral-900 to-neutral-800"
+                    >
+                      {letter}
+                    </motion.span>
+                  ))}
+                </span>
+              ))}
+            </h1>
+
+            {/* Description */}
+            <p className="text-slate-500 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
+              Orchestrate secure, high-precision candidate processing workflows. Coordinate document ingestion, multi-stage assessment metrics, and outbound scheduler agents seamlessly within a single ecosystem.
+            </p>
+
+            {/* CTA Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+              <button
+                onClick={onLaunchDashboard}
+                className="bg-[#0284c7] hover:bg-[#0369a1] text-white px-8 py-4 rounded-xl shadow-md transition-all cursor-pointer text-center flex items-center justify-center gap-2 text-sm font-bold"
+                id="hero-launch-dashboard-btn"
+              >
+                <span>Access the Hub</span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
+
+              <button
+                onClick={() => alert("Enterprise sandbox configured. No external credentials required to evaluate core functions.")}
+                className="border border-neutral-200 bg-white hover:bg-neutral-50 text-neutral-700 px-8 py-4 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 text-sm font-bold"
+                id="hero-explore-architecture-btn"
+              >
+                <span>Explore Integrations</span>
+              </button>
+            </div>
+
           </div>
+        </section>
 
-          {/* Main Headline */}
-          <h1 className="text-4xl sm:text-5xl md:text-6.5xl font-black tracking-tight leading-[1.12] text-slate-900">
-            Hire Smarter, Not Harder <br />
-            with <span className="text-sky-600 bg-gradient-to-r from-sky-500 to-blue-600 bg-clip-text text-transparent">Autonomous AI</span>.
-          </h1>
-
-          {/* Clean Description */}
-          <p className="text-slate-500 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
-            Orchestrate secure, high-precision candidate processing workflows. Coordinate document ingestion, multi-stage assessment metrics, and outbound scheduler agents seamlessly within a single ecosystem.
-          </p>
-
-          {/* CTA Buttons - Using sky colorway to perfectly complement the glowing circuit streams */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-            <button
-              onClick={onLaunchDashboard}
-              className="rounded-xl bg-sky-600 hover:bg-sky-500 px-8 py-4 text-sm font-bold text-white shadow-md shadow-sky-100 active:scale-95 transition cursor-pointer text-center flex items-center justify-center gap-2"
-              id="hero-launch-dashboard-btn"
-            >
-              <span>Launch System Dashboard</span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
-
-            <button
-              onClick={() => alert("Enterprise sandbox configured. No external credentials required to evaluate core functions.")}
-              className="rounded-xl bg-white/80 border border-slate-200 hover:bg-white px-8 py-4 text-sm font-bold text-slate-700 transition flex items-center justify-center gap-2 cursor-pointer shadow-sm backdrop-blur-sm hover:border-slate-300"
-              id="hero-explore-architecture-btn"
-            >
-              <span>Explore Architecture</span>
-            </button>
-          </div>
-
-        </main>
+        <InfiniteGridWrapper>
 
         {/* Bento Box Features Section */}
         <section id="features" className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8 py-12 md:py-20 mb-8 md:mb-12">
@@ -290,7 +316,7 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
         </section>
 
         {/* Call to Action Section */}
-        <section className="relative z-10 max-w-7xl mx-auto px-6 sm:px-8 py-10 md:py-16">
+        <section className="relative z-20 max-w-7xl mx-auto px-6 sm:px-8 py-10 md:py-16">
           <div className="max-w-5xl mx-auto overflow-hidden rounded-3xl border border-slate-200 bg-white/70 backdrop-blur-md p-8 md:p-12 text-center shadow-sm relative">
             <div className="absolute inset-0 bg-gradient-to-br from-sky-50/20 to-transparent pointer-events-none" />
             
@@ -334,51 +360,19 @@ export default function LandingPage({ onLaunchDashboard }: LandingPageProps) {
           </div>
         </section>
 
-        {/* Compact Footer */}
-        <footer className="relative z-10 w-full bg-white/80 border-t border-slate-200 backdrop-blur-md font-sans mt-8 md:mt-12">
-          <div className="max-w-7xl mx-auto px-6 sm:px-8 py-6 md:py-8">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-200/80">
-              
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
-                  Agentix AI
-                </span>
-                <span className="text-[11px] text-slate-400 max-w-xs leading-relaxed hidden sm:block">
-                  Deploying secure, high-precision autonomous agent networks for recruitment workflows.
-                </span>
-              </div>
-
-              <div className="flex items-center gap-6">
-                <a href="#" onClick={(e) => { e.preventDefault(); alert("Opening local technical documentation for recruitment loop triggers."); }} className="text-[11px] font-semibold text-slate-500 hover:text-sky-600 transition-colors flex items-center gap-1">
-                  Documentation <ArrowUpRight className="h-3 w-3" />
-                </a>
-                <a href="#" onClick={(e) => { e.preventDefault(); onLaunchDashboard(); }} className="text-[11px] font-semibold text-slate-500 hover:text-sky-600 transition-colors">
-                  Launch Dashboard
-                </a>
-                <a href="#" onClick={(e) => { e.preventDefault(); alert("Agentix Core Engineers & Autonomous Workflow loops."); }} className="text-[11px] font-semibold text-slate-500 hover:text-sky-600 transition-colors flex items-center gap-1">
-                  Team <ArrowUpRight className="h-3 w-3" />
-                </a>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 text-[11px] text-slate-400">
-              <div className="flex items-center gap-2">
-                <span>&copy; 2026 Agentix AI Inc. All rights reserved.</span>
-                <span className="h-3 w-[1px] bg-slate-200" />
-                <span className="text-emerald-600 flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Operational Secure
-                </span>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <a href="#" onClick={(e) => { e.preventDefault(); alert("Agentix Terms of Use."); }} className="hover:text-slate-500 transition">Terms</a>
-                <a href="#" onClick={(e) => { e.preventDefault(); alert("Agentix Privacy policy."); }} className="hover:text-slate-500 transition">Privacy</a>
-              </div>
+        {/* Footer */}
+        <footer className="relative z-10 w-full bg-white/80 border-t border-slate-200 backdrop-blur-md font-sans">
+          <div className="max-w-7xl mx-auto px-6 sm:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-400">
+            <span>&copy; 2026 Agentix AI. All rights reserved.</span>
+            <div className="flex items-center gap-4">
+              <a href="#" onClick={(e) => { e.preventDefault(); alert("Privacy Policy"); }} className="hover:text-slate-500 transition">Privacy Policy</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); alert("Terms of Service"); }} className="hover:text-slate-500 transition">Terms of Service</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); alert("Status Hub"); }} className="hover:text-slate-500 transition">Status Hub</a>
             </div>
           </div>
         </footer>
+
+        </InfiniteGridWrapper>
 
       </div>
     </div>

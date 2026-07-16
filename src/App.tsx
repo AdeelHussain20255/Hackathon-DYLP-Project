@@ -1491,21 +1491,6 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Modern, Minimalist SaaS Footer */}
-      <footer className="mt-auto border-t border-slate-200/80 bg-white py-6">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-medium text-slate-400">
-          <p className="flex items-center gap-1.5">
-            <Bot className="h-3.5 w-3.5 text-slate-500" />
-            <span>&copy; {new Date().getFullYear()} Agentix AI. All rights reserved.</span>
-          </p>
-          <div className="flex gap-4">
-            <button className="hover:text-slate-600 transition">Privacy Policy</button>
-            <button className="hover:text-slate-600 transition">Terms of Service</button>
-            <button className="hover:text-slate-600 transition">Status Hub</button>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
