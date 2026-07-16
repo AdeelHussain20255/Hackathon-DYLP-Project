@@ -51,28 +51,26 @@ export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSi
   return (
     <>
       <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white">
-        <div className="flex h-16 w-full items-center justify-between px-4 md:px-6 gap-2">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 grid grid-cols-3 items-center">
 
-          {/* Left: Hamburger (mobile) + Brand — flex-shrink-0 prevents squashing */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Hamburger — only visible below md */}
+          {/* Left: Logo + Hamburger */}
+          <div className="flex justify-start items-center gap-2">
             <button
               onClick={() => onMenuToggle?.()}
-              className="md:hidden flex-shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-700 focus:outline-none"
+              className="md:hidden rounded-lg p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-700 focus:outline-none"
               aria-label="Open navigation menu"
             >
               <Menu className="h-5 w-5" />
             </button>
 
-            {/* Brand */}
             <Link
               href="/"
               onClick={() => setCurrentTab("landing")}
-              className="flex items-center gap-2 transition hover:opacity-80 focus:outline-none flex-shrink-0"
+              className="flex items-center gap-2 transition hover:opacity-80 focus:outline-none"
               id="navbar-brand-logo"
               title="Go to SaaS Product Landing Page"
             >
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-slate-900">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-900">
                 <Terminal className="h-4 w-4 text-white" strokeWidth={2} />
               </div>
               <div className="flex flex-col items-start leading-none">
@@ -84,43 +82,43 @@ export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSi
                 </span>
               </div>
             </Link>
-
-            {/* Desktop Navigation — hidden on mobile */}
-            <nav className="hidden md:flex items-center gap-1 ml-5">
-              {navItems.map((item) => {
-                const isActive = currentTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setCurrentTab(item.id)}
-                    className={`relative rounded-lg px-3.5 py-2 text-sm font-medium transition-colors focus:outline-none ${
-                      isActive ? "text-slate-900" : "text-slate-500 hover:text-slate-800"
-                    }`}
-                    id={`nav-item-${item.id}`}
-                  >
-                    {isActive && (
-                      <motion.div
-                        layoutId="activeNavIndicator"
-                        className="absolute inset-0 rounded-lg bg-slate-100 -z-10"
-                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                      />
-                    )}
-                    {item.label}
-                  </button>
-                );
-              })}
-            </nav>
           </div>
 
-          {/* Right: Notifications + Profile — flex-shrink-0 keeps them from collapsing */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Center: Desktop Navigation */}
+          <nav className="hidden md:flex justify-center items-center gap-2 sm:gap-6">
+            {navItems.map((item) => {
+              const isActive = currentTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setCurrentTab(item.id)}
+                  className={`relative rounded-lg px-3.5 py-2 text-sm font-medium transition-colors focus:outline-none ${
+                    isActive ? "text-slate-900" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                  id={`nav-item-${item.id}`}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeNavIndicator"
+                      className="absolute inset-0 rounded-lg bg-slate-100 -z-10"
+                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                    />
+                  )}
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Right: Notifications + Profile */}
+          <div className="flex justify-end items-center gap-4">
 
             {/* Notifications */}
             {user && (
-              <div className="relative flex-shrink-0">
+              <div className="relative">
                 <button
                   onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                  className="relative flex-shrink-0 rounded-lg p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-700 focus:outline-none"
+                  className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-700 focus:outline-none"
                   id="navbar-notification-btn"
                   aria-label="View notifications"
                 >
@@ -162,28 +160,25 @@ export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSi
             )}
 
             {/* Profile / Auth */}
-            <div className="relative flex-shrink-0">
+            <div className="relative">
               {user ? (
                 <div className="flex items-center">
                   <button
                     onClick={() => setIsProfileOpen(!isProfileOpen)}
-                    className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white p-1 sm:pr-2.5 hover:bg-slate-50 transition-all text-left focus:outline-none flex-shrink-0"
+                    className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white p-1 sm:pr-2.5 hover:bg-slate-50 transition-all text-left focus:outline-none"
                     id="clerk-user-profile-btn"
                   >
-                    {/* Avatar — always visible */}
                     <img
                       src={user.avatarUrl}
                       alt={user.name}
-                      className="h-7 w-7 flex-shrink-0 rounded-full object-cover ring-1 ring-slate-100"
+                      className="h-7 w-7 rounded-full object-cover ring-1 ring-slate-100"
                       referrerPolicy="no-referrer"
                     />
-                    {/* Name + role — hidden on xs, shown from sm */}
                     <div className="hidden sm:flex flex-col min-w-0 max-w-[120px]">
                       <span className="text-xs font-semibold text-slate-800 leading-tight truncate">{user.name}</span>
                       <span className="text-[10px] text-slate-500 leading-tight font-medium truncate">{user.role}</span>
                     </div>
-                    {/* Chevron — hidden on xs to save space */}
-                    <ChevronDown className="hidden sm:block h-3.5 w-3.5 flex-shrink-0 text-slate-400" />
+                    <ChevronDown className="hidden sm:block h-3.5 w-3.5 text-slate-400" />
                   </button>
 
                   <AnimatePresence>
@@ -247,10 +242,10 @@ export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSi
               ) : (
                 <button
                   onClick={onSignIn}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950 flex-shrink-0"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-950"
                   id="clerk-signin-placeholder-btn"
                 >
-                  <User className="h-3.5 w-3.5 flex-shrink-0" />
+                  <User className="h-3.5 w-3.5" />
                   <span>Sign In</span>
                 </button>
               )}
