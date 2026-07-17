@@ -13,7 +13,8 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Agentix HR Backend")
 
-origins = [os.getenv("FRONTEND_ORIGIN", "http://localhost:3000"), "http://localhost:3000"]
+frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+origins = [o.strip() for o in frontend_origin.split(",")]
 
 app.add_middleware(
     CORSMiddleware,
