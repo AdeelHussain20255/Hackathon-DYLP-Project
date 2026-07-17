@@ -8,6 +8,18 @@ def gen_id():
     return str(uuid.uuid4())
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    email = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    role = Column(String, default="HR Recruiter")
+    avatar_url = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Candidate(Base):
     __tablename__ = "candidates"
 
@@ -16,20 +28,20 @@ class Candidate(Base):
     email = Column(String, nullable=False)
     role = Column(String, nullable=False)
     department = Column(String, nullable=False)
-    applied_date = Column(String, nullable=False)  # store as ISO date string, matches frontend
+    applied_date = Column(String, nullable=False)
     match_score = Column(Integer, nullable=True)
-    status = Column(String, default="Applied")          # Applied/Screening/Interviewing/Offered/Rejected
-    current_stage = Column(String, default="Awaiting Parsing")  # Awaiting Parsing/Awaiting Ranking/Ready for Outreach/Invite Sent/Done
+    status = Column(String, default="Applied")
+    current_stage = Column(String, default="Awaiting Parsing")
     summary = Column(Text, nullable=True)
-    cv_file_url = Column(String, nullable=True)   
-    cv_text = Column(Text, nullable=True)          # extracted CV text
+    cv_file_url = Column(String, nullable=True)
+    cv_text = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class Agent(Base):
     __tablename__ = "agents"
 
-    id = Column(String, primary_key=True)   # fetcher/parser/ranker/scheduler
+    id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     role = Column(String, nullable=False)
     description = Column(String, nullable=False)

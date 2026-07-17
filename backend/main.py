@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 from app import models
-from app.routers import candidates, agents, dashboard
+from app.routers import auth, candidates, agents, dashboard
 
 load_dotenv()
 
@@ -23,6 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(candidates.router)
 app.include_router(agents.router)
 app.include_router(dashboard.router)

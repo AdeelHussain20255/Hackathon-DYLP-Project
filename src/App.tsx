@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import Navbar from "./components/Navbar";
+import AuthModal from "./components/AuthModal";
 import AgentAnalytics from "./components/AgentAnalytics";
 import BulkUploadZone from "./components/BulkUploadZone";
 import AgentQueue from "./components/AgentQueue";
@@ -70,18 +71,26 @@ export default function App() {
   // Current Navigation Tab
   const [currentTab, setCurrentTab] = useState("landing");
 
-  // Authentication State (Mocking Clerk authentication)
+  // Authentication State
   const [user, setUser] = useState<{
     name: string;
     email: string;
     role: string;
     avatarUrl: string;
-  } | null>({
-    name: "Adeel Hussain",
-    email: "adeelhussain20255@gmail.com",
-    role: "HR Director",
-    avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256&h=256",
-  });
+  } | null>(null);
+
+  const [showAuth, setShowAuth] = useState(false);
+
+  useEffect(() => {
+    const token = api.auth.getToken();
+    if (token) {
+      api.auth.me().then((u) => {
+        setUser({ name: u.name, email: u.email, role: u.role, avatarUrl: u.avatar_url || "" });
+      }).catch(() => {
+        api.auth.logout();
+      });
+    }
+  }, []);
 
   // Notifications State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -508,18 +517,18 @@ Required Skills:
 
   // Auth helper methods
   const handleSignIn = () => {
-    setUser({
-      name: "Adeel Hussain",
-      email: "adeelhussain20255@gmail.com",
-      role: "HR Director",
-      avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256&h=256"
-    });
-    showToast("Clerk Session: Successfully logged in as Adeel Hussain.");
+    setShowAuth(true);
   };
 
   const handleSignOut = () => {
+    api.auth.logout();
     setUser(null);
-    showToast("Clerk Session: Logged out successfully.");
+    showToast("Logged out successfully.");
+  };
+
+  const handleAuthSuccess = (u: { name: string; email: string; role: string; avatarUrl: string }) => {
+    setUser(u);
+    showToast(`Welcome, ${u.name}!`);
   };
 
   return (
@@ -1434,6 +1443,11 @@ Required Skills:
           </div>
         )}
       </AnimatePresence>
+
+      {/* Auth Modal */}
+      {showAuth && (
+        <AuthModal onClose={() => setShowAuth(false)} onAuth={handleAuthSuccess} />
+      )}
 
       {/* Floating Global Micro Notification System */}
       <AnimatePresence>
