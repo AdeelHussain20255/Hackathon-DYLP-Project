@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useAppStore, CandidateStatus, QueueStage } from "./store/useAppStore";
 import { api } from "./api";
+import { GoogleOAuthProvider } from "@react-oauth/google";
 import { 
   Bot, Sparkles, Search, Plus, Filter, CheckCircle2, 
   FileText, Sliders, Eye, RefreshCw, 
@@ -531,7 +532,10 @@ Required Skills:
     showToast(`Welcome, ${u.name}!`);
   };
 
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+
   return (
+    <GoogleOAuthProvider clientId={googleClientId}>
     <div className="min-h-screen w-full overflow-x-hidden bg-slate-50 text-slate-900 font-sans antialiased flex flex-col">
       {/* Navbar Integration - always rendered, full width */}
       <Navbar 
@@ -1473,5 +1477,6 @@ Required Skills:
         )}
       </AnimatePresence>
     </div>
+    </GoogleOAuthProvider>
   );
 }

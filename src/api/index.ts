@@ -66,6 +66,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    google: (credential: string) =>
+      request<{ token: string; user: UserDTO }>("/api/auth/google", {
+        method: "POST",
+        body: JSON.stringify({ credential }),
+      }),
     me: () => request<UserDTO>("/api/auth/me"),
     logout: () => {
       setToken(null);

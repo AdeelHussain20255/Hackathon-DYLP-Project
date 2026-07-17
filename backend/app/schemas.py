@@ -77,6 +77,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleAuthRequest(BaseModel):
+    credential: str
+
+
 class AuthOut(BaseModel):
     token: str
     user: UserOut

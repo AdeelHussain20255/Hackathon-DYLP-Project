@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
 import { X, Mail, Lock, User, Briefcase, LogIn, UserPlus } from "lucide-react";
+import { GoogleLogin } from "@react-oauth/google";
 import { api } from "../api";
 
 interface AuthModalProps {
@@ -71,6 +72,42 @@ export default function AuthModal({ onClose, onAuth }: AuthModalProps) {
             {error}
           </div>
         )}
+
+        <div className="mb-4">
+          <GoogleLogin
+            onSuccess={async (response) => {
+              if (!response.credential) return;
+              setError("");
+              setLoading(true);
+              try {
+                const result = await api.auth.google(response.credential);
+                api.auth.setToken(result.token);
+                onAuth({
+                  name: result.user.name,
+                  email: result.user.email,
+                  role: result.user.role,
+                  avatarUrl: result.user.avatar_url || "",
+                });
+                onClose();
+              } catch (err: any) {
+                setError(err.message || "Google sign-in failed");
+              } finally {
+                setLoading(false);
+              }
+            }}
+            onError={() => setError("Google Sign-In failed")}
+            theme="outline"
+            size="large"
+            text="signin_with"
+            shape="rectangular"
+            width="100%"
+          />
+        </div>
+
+        <div className="relative mb-4">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
+          <div className="relative flex justify-center text-xs"><span className="bg-white px-2 text-slate-400">or continue with email</span></div>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "register" && (
