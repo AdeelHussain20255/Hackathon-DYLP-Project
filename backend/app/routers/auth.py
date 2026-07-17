@@ -33,44 +33,49 @@ def create_token(user_id: str) -> str:
 
 
 def verify_google_token(id_token: str) -> dict:
-    resp = requests.get("https://www.googleapis.com/oauth2/v3/certs", timeout=10)
-    certs = resp.json()
+    try:
+        resp = requests.get("https://www.googleapis.com/oauth2/v3/certs", timeout=10)
+        certs = resp.json()
 
-    headers = jwt.get_unverified_headers(id_token)
-    kid = headers.get("kid")
+        headers = jwt.get_unverified_header(id_token)
+        kid = headers.get("kid")
 
-    key_data = None
-    for key in certs["keys"]:
-        if key["kid"] == kid:
-            key_data = key
-            break
+        key_data = None
+        for key in certs["keys"]:
+            if key["kid"] == kid:
+                key_data = key
+                break
 
-    if not key_data:
-        raise HTTPException(401, "No matching Google signing key found")
+        if not key_data:
+            raise HTTPException(401, "No matching Google signing key found")
 
-    public_key = jwk.construct(key_data)
+        public_key = jwk.construct(key_data)
 
-    message, encoded_signature = id_token.rsplit(".", 1)
-    decoded_signature = base64url_decode(encoded_signature)
+        message, encoded_signature = id_token.rsplit(".", 1)
+        decoded_signature = base64url_decode(encoded_signature)
 
-    if not public_key.verify(message.encode("utf-8"), decoded_signature):
-        raise HTTPException(401, "Invalid Google token signature")
+        if not public_key.verify(message.encode("utf-8"), decoded_signature):
+            raise HTTPException(401, "Invalid Google token signature")
 
-    payload = jwt.get_unverified_claims(id_token)
+        payload = jwt.get_unverified_claims(id_token)
 
-    if payload.get("aud") != GOOGLE_CLIENT_ID:
-        raise HTTPException(401, "Invalid Google token audience")
+        if payload.get("aud") != GOOGLE_CLIENT_ID:
+            raise HTTPException(401, "Invalid Google token audience")
 
-    if payload.get("iss") not in ["accounts.google.com", "https://accounts.google.com"]:
-        raise HTTPException(401, "Invalid Google token issuer")
+        if payload.get("iss") not in ["accounts.google.com", "https://accounts.google.com"]:
+            raise HTTPException(401, "Invalid Google token issuer")
 
-    if not payload.get("email_verified", False):
-        raise HTTPException(401, "Google email not verified")
+        if not payload.get("email_verified", False):
+            raise HTTPException(401, "Google email not verified")
 
-    if not payload.get("email"):
-        raise HTTPException(400, "Email not provided in Google token")
+        if not payload.get("email"):
+            raise HTTPException(400, "Email not provided in Google token")
 
-    return payload
+        return payload
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(401, f"Google token verification failed: {str(e)}")
 
 
 def get_current_user(
