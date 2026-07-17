@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { api, CandidateDTO, AgentDTO } from "../api";
 
 export type CandidateStatus = "Applied" | "Screening" | "Interviewing" | "Offered" | "Rejected";
 export type QueueStage = "Awaiting Parsing" | "Awaiting Ranking" | "Ready for Outreach" | "Invite Sent" | "Done";
@@ -37,89 +38,49 @@ interface AppState {
   candidates: Candidate[];
   agents: Agent[];
   config: DashboardConfig;
+  loading: boolean;
 
-  addCandidate: (candidate: Candidate) => void;
-  removeCandidate: (id: string) => void;
+  fetchCandidates: () => Promise<void>;
+  fetchAgents: () => Promise<void>;
+  addCandidate: (candidate: Candidate) => Promise<void>;
+  removeCandidate: (id: string) => Promise<void>;
   prependCandidates: (candidates: Candidate[]) => void;
-  updateCandidateScore: (id: string, matchScore: number, summary: string) => void;
-  setCandidateStage: (id: string, stage: QueueStage) => void;
-  advanceCandidateStage: (id: string) => void;
-  toggleAgent: (id: string) => void;
+  updateCandidateScore: (id: string, matchScore: number, summary: string) => Promise<void>;
+  setCandidateStage: (id: string, stage: QueueStage) => Promise<void>;
+  advanceCandidateStage: (id: string) => Promise<void>;
+  toggleAgent: (id: string) => Promise<void>;
 }
 
-const initialCandidates: Candidate[] = [
-  {
-    id: "1",
-    name: "Sarah Chen",
-    email: "sarah.chen@techcorp.io",
-    role: "Senior Full Stack Engineer",
-    department: "Engineering",
-    appliedDate: "2026-07-08",
-    matchScore: 96,
-    status: "Interviewing",
-    currentStage: "Done",
-    summary: "Exceptional mastery of React 19, TypeScript, and microservice architectures. Ex-Stripe with strong systems experience.",
-  },
-  {
-    id: "2",
-    name: "Alex Rivera",
-    email: "alex.rivera@designlab.co",
-    role: "Lead UX Designer",
-    department: "Design",
-    appliedDate: "2026-07-09",
-    matchScore: 91,
-    status: "Applied",
-    currentStage: "Done",
-    summary: "Pristine visual portfolio focusing on enterprise SaaS layouts, responsive designs, and interactive dynamic flows.",
-  },
-  {
-    id: "3",
-    name: "Marcus Vance",
-    email: "marcus.vance@cloudsolutions.net",
-    role: "Staff DevOps Architect",
-    department: "Engineering",
-    appliedDate: "2026-07-10",
-    matchScore: null,
-    status: "Screening",
-    currentStage: "Awaiting Parsing",
-  },
-  {
-    id: "4",
-    name: "Elena Rostova",
-    email: "elena.rostova@productmind.org",
-    role: "VP of Product",
-    department: "Product",
-    appliedDate: "2026-07-05",
-    matchScore: 98,
-    status: "Offered",
-    currentStage: "Done",
-    summary: "Stellar enterprise scaling metrics. Scaled product from $5M to $45M ARR. High-agency product builder.",
-  },
-  {
-    id: "5",
-    name: "Derrick Kim",
-    email: "derrick.kim@recruithub.com",
-    role: "Technical Recruiter",
-    department: "Human Resources",
-    appliedDate: "2026-07-10",
-    matchScore: null,
-    status: "Applied",
-    currentStage: "Awaiting Ranking",
-  },
-];
+function toCandidate(dto: CandidateDTO): Candidate {
+  return {
+    id: dto.id,
+    name: dto.name,
+    email: dto.email,
+    role: dto.role,
+    department: dto.department,
+    appliedDate: dto.applied_date,
+    matchScore: dto.match_score,
+    status: dto.status as CandidateStatus,
+    currentStage: dto.current_stage as QueueStage,
+    summary: dto.summary || undefined,
+  };
+}
 
-const initialAgents: Agent[] = [
-  { id: "fetcher", name: "Fetcher Bot", role: "Pulls CVs from external sources", description: "Monitors integrated ATS webhooks, email inboxes, and Shared Folders to auto-ingest candidate CV documents.", isRunning: true },
-  { id: "parser", name: "Parser Bot", role: "Extracts JSON data", description: "Parses PDF, DOCX, and unstructured documents into structured JSON AST abstract schemas.", isRunning: true },
-  { id: "ranker", name: "Ranker Bot", role: "Scores via Gemini", description: "Generates high-dimensional semantic embeddings to match resumes against vectorized job descriptions.", isRunning: true },
-  { id: "scheduler", name: "Scheduler Bot", role: "Fires emails", description: "Dispatches automated interview invites and updates calendars autonomously for matching candidates.", isRunning: false },
-];
+function toAgent(dto: AgentDTO): Agent {
+  return {
+    id: dto.id,
+    name: dto.name,
+    role: dto.role,
+    description: dto.description,
+    isRunning: dto.is_running,
+  };
+}
 
 const initialConfig: DashboardConfig = {
-  candidatesTrend:   "+12% vs last month",
+  candidatesTrend: "+12% vs last month",
   highMatchThreshold: 90,
-  cvProcessedTrend:  "+12.4%",
-  processingTimeMs:  380,
+  cvProcessedTrend: "+12.4%",
+  processingTimeMs: 380,
   skillMatchData: [
     { name: "React 19", weight: 0.061, color: "#4f46e5" },
     { name: "TypeScript", weight: 0.057, color: "#6366f1" },
@@ -136,55 +97,120 @@ const initialConfig: DashboardConfig = {
   ],
 };
 
-export const useAppStore = create<AppState>((set) => ({
-  candidates: initialCandidates,
-  agents: initialAgents,
+export const useAppStore = create<AppState>((set, get) => ({
+  candidates: [],
+  agents: [],
   config: initialConfig,
+  loading: false,
 
-  addCandidate: (candidate) =>
-    set((state) => ({ candidates: [candidate, ...state.candidates] })),
+  fetchCandidates: async () => {
+    try {
+      const dtos = await api.candidates.list();
+      set({ candidates: dtos.map(toCandidate) });
+    } catch (e) {
+      console.error("fetchCandidates failed", e);
+    }
+  },
 
-  removeCandidate: (id) =>
-    set((state) => ({ candidates: state.candidates.filter((c) => c.id !== id) })),
+  fetchAgents: async () => {
+    try {
+      const dtos = await api.agents.list();
+      set({ agents: dtos.map(toAgent) });
+    } catch (e) {
+      console.error("fetchAgents failed", e);
+    }
+  },
+
+  addCandidate: async (candidate) => {
+    try {
+      const dto = await api.candidates.create({
+        name: candidate.name,
+        email: candidate.email,
+        role: candidate.role,
+        department: candidate.department,
+        applied_date: candidate.appliedDate,
+      });
+      set((state) => ({ candidates: [toCandidate(dto), ...state.candidates] }));
+    } catch (e) {
+      console.error("addCandidate failed", e);
+    }
+  },
+
+  removeCandidate: async (id) => {
+    try {
+      await api.candidates.delete(id);
+      set((state) => ({ candidates: state.candidates.filter((c) => c.id !== id) }));
+    } catch (e) {
+      console.error("removeCandidate failed", e);
+    }
+  },
 
   prependCandidates: (newCandidates) =>
     set((state) => ({ candidates: [...newCandidates, ...state.candidates] })),
 
-  updateCandidateScore: (id, matchScore, summary) =>
-    set((state) => ({
-      candidates: state.candidates.map((c) =>
-        c.id === id ? { ...c, matchScore, summary, status: "Screening", currentStage: "Done" as QueueStage } : c,
-      ),
-    })),
+  updateCandidateScore: async (id, matchScore, summary) => {
+    try {
+      await api.candidates.updateStage(id, "Done");
+      await api.candidates.updateStatus(id, "Screening");
+      set((state) => ({
+        candidates: state.candidates.map((c) =>
+          c.id === id ? { ...c, matchScore, summary, status: "Screening", currentStage: "Done" as QueueStage } : c,
+        ),
+      }));
+    } catch (e) {
+      console.error("updateCandidateScore failed", e);
+    }
+  },
 
-  setCandidateStage: (id, stage) =>
-    set((state) => ({
-      candidates: state.candidates.map((c) =>
-        c.id === id ? { ...c, currentStage: stage } : c,
-      ),
-    })),
+  setCandidateStage: async (id, stage) => {
+    try {
+      await api.candidates.updateStage(id, stage);
+      set((state) => ({
+        candidates: state.candidates.map((c) =>
+          c.id === id ? { ...c, currentStage: stage } : c,
+        ),
+      }));
+    } catch (e) {
+      console.error("setCandidateStage failed", e);
+    }
+  },
 
-  advanceCandidateStage: (id) =>
-    set((state) => ({
-      candidates: state.candidates.map((c) => {
-        if (c.id !== id) return c;
-        const next: Record<string, QueueStage> = {
-          "Awaiting Parsing": "Awaiting Ranking",
-          "Awaiting Ranking": "Ready for Outreach",
-          "Ready for Outreach": "Invite Sent",
-        };
-        const nextStage = next[c.currentStage] ?? c.currentStage;
-        const newScore = nextStage === "Ready for Outreach" && c.matchScore === null
-          ? Math.floor(Math.random() * (96 - 78 + 1)) + 78
-          : c.matchScore;
-        return { ...c, currentStage: nextStage, matchScore: newScore };
-      }),
-    })),
+  advanceCandidateStage: async (id) => {
+    const c = get().candidates.find((c) => c.id === id);
+    if (!c) return;
+    const next: Record<string, QueueStage> = {
+      "Awaiting Parsing": "Awaiting Ranking",
+      "Awaiting Ranking": "Ready for Outreach",
+      "Ready for Outreach": "Invite Sent",
+    };
+    const nextStage = next[c.currentStage] ?? c.currentStage;
+    try {
+      await api.candidates.updateStage(id, nextStage);
+      const newScore = nextStage === "Ready for Outreach" && c.matchScore === null
+        ? Math.floor(Math.random() * (96 - 78 + 1)) + 78
+        : c.matchScore;
+      set((state) => ({
+        candidates: state.candidates.map((x) =>
+          x.id === id ? { ...x, currentStage: nextStage, matchScore: newScore } : x,
+        ),
+      }));
+    } catch (e) {
+      console.error("advanceCandidateStage failed", e);
+    }
+  },
 
-  toggleAgent: (id) =>
-    set((state) => ({
-      agents: state.agents.map((a) =>
-        a.id === id ? { ...a, isRunning: !a.isRunning } : a,
-      ),
-    })),
+  toggleAgent: async (id) => {
+    const agent = get().agents.find((a) => a.id === id);
+    if (!agent) return;
+    try {
+      const dto = await api.agents.toggle(id, !agent.isRunning);
+      set((state) => ({
+        agents: state.agents.map((a) =>
+          a.id === id ? { ...a, isRunning: dto.is_running } : a,
+        ),
+      }));
+    } catch (e) {
+      console.error("toggleAgent failed", e);
+    }
+  },
 }));

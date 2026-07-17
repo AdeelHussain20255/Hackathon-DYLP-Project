@@ -24,6 +24,7 @@ interface StagedFile {
 
 interface BulkUploadZoneProps {
   onFilesProcessed?: (count: number) => void;
+  onFilesSelected?: (files: { id: string; name: string; size: string; file: File }[]) => void;
   showToast?: (message: string) => void;
 }
 
@@ -32,7 +33,7 @@ const plural = (count: number, singular: string, pluralForm?: string): string =>
   return `${count} ${word}`;
 };
 
-export default function BulkUploadZone({ onFilesProcessed, showToast }: BulkUploadZoneProps) {
+export default function BulkUploadZone({ onFilesProcessed, onFilesSelected, showToast }: BulkUploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isForceFetching, setIsForceFetching] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<StagedFile[]>([]);
@@ -78,7 +79,6 @@ export default function BulkUploadZone({ onFilesProcessed, showToast }: BulkUplo
       return;
     }
 
-    // Initialize mock uploads
     const newStagedFiles: StagedFile[] = filteredFiles.map((file, idx) => ({
       id: `bulk-${Date.now()}-${idx}`,
       name: file.name,
@@ -87,6 +87,15 @@ export default function BulkUploadZone({ onFilesProcessed, showToast }: BulkUplo
       progress: 0,
       status: "uploading" as const
     }));
+
+    if (onFilesSelected) {
+      onFilesSelected(newStagedFiles.map((s, i) => ({
+        id: s.id,
+        name: s.name,
+        size: s.size,
+        file: filteredFiles[i],
+      })));
+    }
 
     setUploadingFiles(newStagedFiles);
     simulateFileUploads(newStagedFiles);

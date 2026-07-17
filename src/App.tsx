@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from "react";
-import { GoogleGenAI } from "@google/genai";
-import { useAppStore } from "./store/useAppStore";
+import React, { useState, useMemo, useEffect } from "react";
+import { useAppStore, CandidateStatus, QueueStage } from "./store/useAppStore";
+import { api } from "./api";
 import { 
   Bot, Sparkles, Search, Plus, Filter, CheckCircle2, 
   FileText, Sliders, Eye, RefreshCw, 
@@ -107,51 +107,13 @@ export default function App() {
   const avgMatch = scored.length ? Math.round(scored.reduce((a, c) => a + (c.matchScore ?? 0), 0) / scored.length) : 0;
   const avgMatchScoreLabel = `${avgMatch}% Match`;
 
-  // 1. Initial State for AI Agents
-  const [aiAgents, setAiAgents] = useState<AIAgent[]>([
-    {
-      id: "screener-x",
-      name: "ScreenerX",
-      tag: "Recruitment Agent",
-      description: "Auto-parses resume uploads, scores tech-stack compliance, and conducts instant background qualification scans.",
-      status: "Active",
-      efficiency: "94% saving",
-      tasksCompleted: 482,
-      config: { confidenceThreshold: 85, channel: "ATS Import", autoScreen: true }
-    },
-    {
-      id: "onboard-flow",
-      name: "OnboardFlow",
-      tag: "Employee Experience Agent",
-      description: "Configures tailored checklist pipelines, coordinates legal documents, and walks new hires through handbook policies.",
-      status: "Active",
-      efficiency: "88% faster",
-      tasksCompleted: 154,
-      config: { confidenceThreshold: 90, channel: "Slack / Email", autoScreen: false }
-    },
-    {
-      id: "scheduler-pro",
-      name: "SchedulerPro",
-      tag: "Operations Agent",
-      description: "Synchronizes calendar availability between department panels and prospective candidates to dispatch interview confirmations.",
-      status: "Idle",
-      efficiency: "100% autonomous",
-      tasksCompleted: 830,
-      config: { confidenceThreshold: 75, channel: "Google Calendar", autoScreen: true }
-    },
-    {
-      id: "review-sync",
-      name: "ReviewSync",
-      tag: "Sentiment & Performance Agent",
-      description: "Extracts constructive sentiment signals from team feedbacks and charts individual growth trajectories.",
-      status: "Paused",
-      efficiency: "12 hrs/mo saved",
-      tasksCompleted: 45,
-      config: { confidenceThreshold: 80, channel: "Slack Hub", autoScreen: false }
-    }
-  ]);
+  // 1. Load initial data from backend on mount
+  useEffect(() => {
+    useAppStore.getState().fetchCandidates();
+    useAppStore.getState().fetchAgents();
+  }, []);
 
-  // 2. Candidates now live in useAppStore
+  // 2. Candidates & Agents live in useAppStore
 
   // Mobile sidebar toggle
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -191,6 +153,7 @@ Required Skills:
     { id: "cv-2", name: "resume_liam_novak.pdf", size: "189 KB", status: "staged" },
     { id: "cv-3", name: "resume_rajesh_kumar.pdf", size: "312 KB", status: "staged" }
   ]);
+  const [actualFiles, setActualFiles] = useState<Map<string, File>>(new Map());
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isLeaderboardRevealed, setIsLeaderboardRevealed] = useState<boolean>(false);
   const [isScoringRunning, setIsScoringRunning] = useState(false);
@@ -219,6 +182,11 @@ Required Skills:
       }));
       setStagedCvs(prev => [...prev, ...newStaged]);
       setFiles(prev => [...prev, ...newStaged]);
+      setActualFiles(prev => {
+        const next = new Map(prev);
+        newStaged.forEach((s, i) => next.set(s.id, filesList[i]));
+        return next;
+      });
       showToast(`Staged ${plural(filesList.length, "candidate CV file")}`);
     }
   };
@@ -234,6 +202,11 @@ Required Skills:
       }));
       setStagedCvs(prev => [...prev, ...newStaged]);
       setFiles(prev => [...prev, ...newStaged]);
+      setActualFiles(prev => {
+        const next = new Map(prev);
+        newStaged.forEach((s, i) => next.set(s.id, filesList[i]));
+        return next;
+      });
       showToast(`Staged ${plural(filesList.length, "candidate CV file")}`);
     }
   };
@@ -257,6 +230,7 @@ Required Skills:
   const handleRemoveStagedCv = (id: string) => {
     setStagedCvs(prev => prev.filter(cv => cv.id !== id));
     setFiles(prev => prev.filter(cv => cv.id !== id));
+    setActualFiles(prev => { const next = new Map(prev); next.delete(id); return next; });
     showToast("Candidate CV removed from staging");
   };
 
@@ -277,82 +251,66 @@ Required Skills:
     setFiles(prev => prev.map(f => ({ ...f, status: "parsing" })));
 
     const activeFilesList = stagedCvs.length > 0 ? stagedCvs : files;
-    interface ScoredCandidate { id: string; name: string; role: string; department: string; status: "Applied" | "Screening" | "Interviewing" | "Offered" | "Rejected"; matchScore: number; appliedDate: string; email: string; summary: string; currentStage: "Awaiting Parsing" | "Awaiting Ranking" | "Ready for Outreach" | "Invite Sent" | "Done"; }
-    const newScoredCandidates: ScoredCandidate[] = [];
-
-    // Score each CV with Gemini AI
-    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || "" });
 
     for (let idx = 0; idx < activeFilesList.length; idx++) {
       const cv = activeFilesList[idx];
       setScoringProgress(Math.round(((idx) / activeFilesList.length) * 90));
 
-      // Derive candidate name from filename
-      let candidateName = cv.name.replace(/\.[^/.]+$/, "").replace(/_/g, " ").replace(/resume /i, "").trim();
-      candidateName = candidateName.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-
-      let score = 80;
-      let summary = "";
-      let role = "Software Engineer";
-      let dept = "Engineering";
-      let email = `${candidateName.toLowerCase().replace(/ /g, ".")}@example.com`;
-
-      try {
-        const prompt = `You are a senior HR recruiter AI. Given the following job description and a candidate's CV filename, produce a JSON object with these fields:
-- name: string (infer a realistic full name from the filename, e.g. "resume_clara_fontaine.pdf" → "Clara Fontaine")
-- role: string (a fitting job title for this candidate based on the JD)
-- score: number (0-100 integer, how well this candidate matches the JD)
-- summary: string (2-sentence assessment of the candidate's fit)
-- email: string (a plausible professional email for the candidate)
-
-Job Description:
-${jobDescription}
-
-CV Filename: ${cv.name}
-
-Respond with ONLY valid JSON, no markdown, no explanation.`;
-
-        const response = await ai.models.generateContent({
-          model: "gemini-2.0-flash",
-          contents: prompt,
-        });
-
-        const text = response.text?.trim() ?? "";
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          candidateName = parsed.name || candidateName;
-          role = parsed.role || role;
-          score = typeof parsed.score === "number" ? Math.max(0, Math.min(100, parsed.score)) : score;
-          summary = parsed.summary || summary;
-          email = parsed.email || email;
+      const file = actualFiles.get(cv.id);
+      if (file) {
+        try {
+          const dto = await api.candidates.upload(file, jobDescription);
+          prependCandidates([{
+            id: dto.id,
+            name: dto.name,
+            email: dto.email,
+            role: dto.role,
+            department: dto.department,
+            appliedDate: dto.applied_date,
+            matchScore: dto.match_score,
+            status: dto.status as CandidateStatus,
+            currentStage: dto.current_stage as QueueStage,
+            summary: dto.summary || undefined,
+          }]);
+        } catch (e) {
+          showToast(`Upload failed for ${cv.name}: ${e}`);
         }
-      } catch {
-        // Fallback to heuristic scoring if API fails
-        score = Math.floor(Math.random() * (98 - 72 + 1)) + 72;
-        summary = `Evaluated candidate CV. Demonstrates solid competency in key core skills with ${score}% overall job match score. Recommended for immediate technical screening.`;
+      } else {
+        const candidateName = cv.name.replace(/\.[^/.]+$/, "").replace(/_/g, " ").replace(/resume /i, "").trim()
+          .split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+        const email = `${candidateName.toLowerCase().replace(/ /g, ".")}@example.com`;
+        const score = Math.floor(Math.random() * (98 - 72 + 1)) + 72;
+        try {
+          const dto = await api.candidates.create({
+            name: candidateName,
+            email,
+            role: "Software Engineer",
+            department: "Engineering",
+            applied_date: new Date().toISOString().split("T")[0],
+          });
+          prependCandidates([{
+            id: dto.id,
+            name: dto.name,
+            email: dto.email,
+            role: dto.role,
+            department: dto.department,
+            appliedDate: dto.applied_date,
+            matchScore: score,
+            status: dto.status as CandidateStatus,
+            currentStage: "Done" as QueueStage,
+            summary: `Evaluated candidate CV. Demonstrates solid competency with ${score}% overall job match score.`,
+          }]);
+        } catch (e) {
+          showToast(`Failed to create candidate for ${cv.name}: ${e}`);
+        }
       }
 
       setStagedCvs(curr => curr.map((c, i) => i === idx ? { ...c, status: "completed" } : c));
       setFiles(curr => curr.map((c, i) => i === idx ? { ...c, status: "completed" } : c));
-
-      newScoredCandidates.push({
-        id: `staged-cand-${Date.now()}-${idx}`,
-        name: candidateName,
-        role,
-        department: dept,
-        status: "Applied" as const,
-        matchScore: score,
-        appliedDate: new Date().toISOString().split("T")[0],
-        email,
-        summary,
-        currentStage: "Done" as const,
-      });
     }
 
     setScoringProgress(100);
-
-    prependCandidates(newScoredCandidates);
+    setActualFiles(new Map());
     setStagedCvs([]);
     setFiles([]);
     setIsProcessing(false);
@@ -360,7 +318,9 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
     setScoringProgress(0);
     setIsLeaderboardRevealed(true);
 
-    showToast(`Agentix Scoring Complete! Evaluated and imported ${plural(newScoredCandidates.length, "candidate CV", "candidate CVs")}.`);
+    await useAppStore.getState().fetchCandidates();
+
+    showToast(`Agentix Scoring Complete! Evaluated and imported ${plural(activeFilesList.length, "candidate CV", "candidate CVs")}.`);
   };
 
   const runAgentixScoring = () => {
@@ -531,14 +491,6 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
   const handleAgentConfigSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAgentForConfig) return;
-
-    setAiAgents(prev => prev.map(a => {
-      if (a.id === selectedAgentForConfig.id) {
-        return selectedAgentForConfig;
-      }
-      return a;
-    }));
-
     showToast(`Configuration updated for ${selectedAgentForConfig.name}.`);
     setSelectedAgentForConfig(null);
   };
@@ -814,7 +766,6 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                   <div className="space-y-6">
                     <BulkUploadZone 
                       onFilesProcessed={(count) => {
-                        // Dynamically generate simulated candidate details with matching names
                         const names = [
                           "Clara Fontaine", "Liam Novak", "Rajesh Kumar", 
                           "Alex Rivera", "Jordan Smith", "Taylor Chen", 
@@ -835,6 +786,21 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                         });
                         setStagedCvs(prev => [...prev, ...newStaged]);
                         setFiles(prev => [...prev, ...newStaged]);
+                      }}
+                      onFilesSelected={(fileEntries) => {
+                        const newStaged = fileEntries.map((f) => ({
+                          id: f.id,
+                          name: f.name,
+                          size: f.size,
+                          status: "staged" as const
+                        }));
+                        setStagedCvs(prev => [...prev, ...newStaged]);
+                        setFiles(prev => [...prev, ...newStaged]);
+                        setActualFiles(prev => {
+                          const next = new Map(prev);
+                          fileEntries.forEach(f => next.set(f.id, f.file));
+                          return next;
+                        });
                       }}
                       showToast={showToast}
                     />
@@ -900,6 +866,7 @@ Respond with ONLY valid JSON, no markdown, no explanation.`;
                                   { id: "cv-2", name: "resume_liam_novak.pdf", size: "189 KB", status: "staged" },
                                   { id: "cv-3", name: "resume_rajesh_kumar.pdf", size: "312 KB", status: "staged" }
                                 ]);
+                                setActualFiles(new Map());
                                 showToast("Staged 3 diagnostic candidate CVs");
                               }}
                               className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline"
