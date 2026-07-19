@@ -42,14 +42,14 @@ export default function AuthModal({ onClose, onAuth }: AuthModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-200"
+        className="relative w-full max-w-md rounded-2xl bg-white p-5 sm:p-6 shadow-xl border border-slate-200 my-4"
       >
-        <button onClick={onClose} className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition">
+        <button onClick={onClose} className="absolute right-3 top-3 sm:right-4 sm:top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition">
           <X className="h-5 w-5" />
         </button>
 
@@ -73,35 +73,36 @@ export default function AuthModal({ onClose, onAuth }: AuthModalProps) {
           </div>
         )}
 
-        <div className="mb-4">
-          <GoogleLogin
-            onSuccess={async (response) => {
-              if (!response.credential) return;
-              setError("");
-              setLoading(true);
-              try {
-                const result = await api.auth.google(response.credential);
-                api.auth.setToken(result.token);
-                onAuth({
-                  name: result.user.name,
-                  email: result.user.email,
-                  role: result.user.role,
-                  avatarUrl: result.user.avatar_url || "",
-                });
-                onClose();
-              } catch (err: any) {
-                setError(err.message || "Google sign-in failed");
-              } finally {
-                setLoading(false);
-              }
-            }}
-            onError={() => setError("Google Sign-In failed")}
-            theme="outline"
-            size="large"
-            text="signin_with"
-            shape="rectangular"
-            width="100%"
-          />
+        <div className="mb-4 w-full overflow-hidden">
+          <div className="flex justify-center w-full" style={{ minHeight: "40px" }}>
+            <GoogleLogin
+              onSuccess={async (response) => {
+                if (!response.credential) return;
+                setError("");
+                setLoading(true);
+                try {
+                  const result = await api.auth.google(response.credential);
+                  api.auth.setToken(result.token);
+                  onAuth({
+                    name: result.user.name,
+                    email: result.user.email,
+                    role: result.user.role,
+                    avatarUrl: result.user.avatar_url || "",
+                  });
+                  onClose();
+                } catch (err: any) {
+                  setError(err.message || "Google sign-in failed");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              onError={() => setError("Google Sign-In failed")}
+              theme="outline"
+              size="large"
+              text="signin_with"
+              shape="rectangular"
+            />
+          </div>
         </div>
 
         <div className="relative mb-4">

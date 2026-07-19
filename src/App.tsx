@@ -5,7 +5,7 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 import { 
   Bot, Sparkles, Search, Plus, Filter, CheckCircle2, 
   FileText, Sliders, Eye, RefreshCw, 
-  AlertCircle, UserCheck, Trash2, Check, X
+  AlertCircle, UserCheck, Trash2, Check, X, Activity
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import Navbar from "./components/Navbar";
@@ -14,6 +14,10 @@ import AgentAnalytics from "./components/AgentAnalytics";
 import BulkUploadZone from "./components/BulkUploadZone";
 import AgentQueue from "./components/AgentQueue";
 import LandingPage from "./components/LandingPage";
+import FetchFilters, { FiltersState } from "./components/FetchFilters";
+import PipelineRunner from "./components/PipelineRunner";
+import ResultsDashboard from "./components/ResultsDashboard";
+import { CandidateDTO } from "./api";
 
 // Define TypeScript interfaces for our application state
 interface AIAgent {
@@ -111,7 +115,23 @@ export default function App() {
   const updateCandidateScore = useAppStore((s) => s.updateCandidateScore);
   const setCandidateStage = useAppStore((s) => s.setCandidateStage);
   const advanceCandidateStage = useAppStore((s) => s.advanceCandidateStage);
+  const screenCandidate = useAppStore((s) => s.screenCandidate);
+  const updateAgentConfig = useAppStore((s) => s.updateAgentConfig);
+  const runDiagnosticsAction = useAppStore((s) => s.runDiagnostics);
+  const fetchNotifications = useAppStore((s) => s.fetchNotifications);
+  const fetchQueue = useAppStore((s) => s.fetchQueue);
+  const notifications = useAppStore((s) => s.notifications);
+  const queueItems = useAppStore((s) => s.queueItems);
+  const diagnosticResult = useAppStore((s) => s.diagnosticResult);
+  const markNotificationRead = useAppStore((s) => s.markNotificationRead);
   const toggleAgent = useAppStore((s) => s.toggleAgent);
+
+  const pipelineRuns = useAppStore((s) => s.pipelineRuns);
+  const pipelineResults = useAppStore((s) => s.pipelineResults);
+  const runPipelineAction = useAppStore((s) => s.runPipeline);
+  const fetchPipelineRuns = useAppStore((s) => s.fetchPipelineRuns);
+  const getPipelineRun = useAppStore((s) => s.getPipelineRun);
+  const [selectedPipelineRunId, setSelectedPipelineRunId] = useState<string | null>(null);
 
   const scored = candidates.filter(c => c.matchScore !== null);
   const avgMatch = scored.length ? Math.round(scored.reduce((a, c) => a + (c.matchScore ?? 0), 0) / scored.length) : 0;
@@ -121,7 +141,21 @@ export default function App() {
   useEffect(() => {
     useAppStore.getState().fetchCandidates();
     useAppStore.getState().fetchAgents();
+    fetchNotifications();
+    fetchQueue();
   }, []);
+
+  useEffect(() => {
+    if (currentTab !== "landing") {
+      fetchQueue();
+    }
+  }, [candidates.length]);
+
+  useEffect(() => {
+    if (currentTab === "pipeline") {
+      fetchPipelineRuns();
+    }
+  }, [currentTab]);
 
   // 2. Candidates & Agents live in useAppStore
 
@@ -136,7 +170,6 @@ export default function App() {
   const [isAddCandidateOpen, setIsAddCandidateOpen] = useState(false);
   const [selectedAgentForConfig, setSelectedAgentForConfig] = useState<AIAgent | null>(null);
   const [diagnosticRunning, setDiagnosticRunning] = useState(false);
-  const [diagnosticResult, setDiagnosticResult] = useState<string | null>(null);
 
   // JD & CV Upload Workspace States
   const [jobDescription, setJobDescription] = useState<string>(`We are looking for a Senior Full Stack Engineer to join our core product team. 
@@ -153,22 +186,22 @@ Required Skills:
 - Strong system architecture and API integration patterns`);
 
   const [isJdSaved, setIsJdSaved] = useState(false);
-  const [stagedCvs, setStagedCvs] = useState<{ id: string; name: string; size: string; status: "staged" | "parsing" | "completed" }[]>([
-    { id: "cv-1", name: "resume_clara_fontaine.pdf", size: "244 KB", status: "staged" },
-    { id: "cv-2", name: "resume_liam_novak.pdf", size: "189 KB", status: "staged" },
-    { id: "cv-3", name: "resume_rajesh_kumar.pdf", size: "312 KB", status: "staged" }
-  ]);
-  const [files, setFiles] = useState<any[]>([
-    { id: "cv-1", name: "resume_clara_fontaine.pdf", size: "244 KB", status: "staged" },
-    { id: "cv-2", name: "resume_liam_novak.pdf", size: "189 KB", status: "staged" },
-    { id: "cv-3", name: "resume_rajesh_kumar.pdf", size: "312 KB", status: "staged" }
-  ]);
+  const [stagedCvs, setStagedCvs] = useState<{ id: string; name: string; size: string; status: "staged" | "parsing" | "completed" }[]>([]);
+  const [files, setFiles] = useState<any[]>([]);
   const [actualFiles, setActualFiles] = useState<Map<string, File>>(new Map());
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [isLeaderboardRevealed, setIsLeaderboardRevealed] = useState<boolean>(false);
   const [isScoringRunning, setIsScoringRunning] = useState(false);
   const [scoringProgress, setScoringProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [isFetchingFromBoards, setIsFetchingFromBoards] = useState(false);
+  const [fetchedCandidates, setFetchedCandidates] = useState<CandidateDTO[]>([]);
+  const [fetchPlatformBreakdown, setFetchPlatformBreakdown] = useState<Record<string, number>>({});
+  const [fetchTimeMs, setFetchTimeMs] = useState(0);
+  const [boardFilters, setBoardFilters] = useState<FiltersState>({
+    gender: "", shift: "", remote: "", ageMin: "", ageMax: "",
+    location: "", experienceMin: "", experienceMax: "",
+  });
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -221,13 +254,58 @@ Required Skills:
     }
   };
 
-  const handleSaveJd = () => {
+  const handleFetchFromBoards = async () => {
+    if (!jobDescription.trim()) {
+      showToast("Please enter a Job Description first");
+      return;
+    }
+    setIsFetchingFromBoards(true);
+    setFetchedCandidates([]);
+    showToast("Searching job boards for real candidates...");
+    try {
+      const f = boardFilters;
+      const result = await api.fetchCandidates.fromBoards({
+        job_title: jobDescription.split("\n")[0].slice(0, 60),
+        job_description: jobDescription,
+        max_results_per_source: 15,
+        filters: {
+          gender: f.gender || undefined,
+          shift: f.shift || undefined,
+          remote: f.remote ? f.remote === "true" : undefined,
+          age_min: f.ageMin ? parseInt(f.ageMin) : undefined,
+          age_max: f.ageMax ? parseInt(f.ageMax) : undefined,
+          location: f.location || undefined,
+          experience_min: f.experienceMin ? parseInt(f.experienceMin) : undefined,
+          experience_max: f.experienceMax ? parseInt(f.experienceMax) : undefined,
+        },
+      });
+      setFetchedCandidates(result.candidates);
+      setFetchPlatformBreakdown(result.platform_breakdown);
+      setFetchTimeMs(result.fetch_time_ms);
+      if (result.candidates.length > 0) {
+        showToast(`Found ${result.total_fetched} candidates from boards in ${result.fetch_time_ms}ms!`);
+        await useAppStore.getState().fetchCandidates();
+      } else {
+        showToast("No candidates matched your filters. Try broader criteria.");
+      }
+    } catch (e: any) {
+      showToast(`Fetch failed: ${e.message || e}`);
+    }
+    setIsFetchingFromBoards(false);
+  };
+
+  const handleSaveJd = async () => {
     if (!jobDescription.trim()) {
       showToast("Error: Job Description cannot be empty");
       return;
     }
-    setIsJdSaved(true);
-    showToast("Success: Job Description successfully saved and vectorized!");
+    try {
+      await api.jobs.save({ title: "Current JD", text: jobDescription });
+      setIsJdSaved(true);
+      showToast("Success: Job Description successfully saved and vectorized!");
+    } catch (e) {
+      showToast(`Failed to save JD: ${e}`);
+    }
   };
 
   const handleJdChange = (val: string) => {
@@ -281,37 +359,16 @@ Required Skills:
             status: dto.status as CandidateStatus,
             currentStage: dto.current_stage as QueueStage,
             summary: dto.summary || undefined,
+            gender: dto.gender,
+            shiftPreference: dto.shift_preference,
+            age: dto.age,
+            isRemote: dto.is_remote,
+            location: dto.location,
+            skills: dto.skills,
+            experienceYears: dto.experience_years,
           }]);
         } catch (e) {
           showToast(`Upload failed for ${cv.name}: ${e}`);
-        }
-      } else {
-        const candidateName = cv.name.replace(/\.[^/.]+$/, "").replace(/_/g, " ").replace(/resume /i, "").trim()
-          .split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-        const email = `${candidateName.toLowerCase().replace(/ /g, ".")}@example.com`;
-        const score = Math.floor(Math.random() * (98 - 72 + 1)) + 72;
-        try {
-          const dto = await api.candidates.create({
-            name: candidateName,
-            email,
-            role: "Software Engineer",
-            department: "Engineering",
-            applied_date: new Date().toISOString().split("T")[0],
-          });
-          prependCandidates([{
-            id: dto.id,
-            name: dto.name,
-            email: dto.email,
-            role: dto.role,
-            department: dto.department,
-            appliedDate: dto.applied_date,
-            matchScore: score,
-            status: dto.status as CandidateStatus,
-            currentStage: "Done" as QueueStage,
-            summary: `Evaluated candidate CV. Demonstrates solid competency with ${score}% overall job match score.`,
-          }]);
-        } catch (e) {
-          showToast(`Failed to create candidate for ${cv.name}: ${e}`);
         }
       }
 
@@ -362,24 +419,48 @@ Required Skills:
     const totalCandidates = candidates.length;
     const activeAIAgents = agents.filter(a => a.isRunning).length;
     const highMatchCandidates = candidates.filter(c => c.matchScore && c.matchScore >= config.highMatchThreshold).length;
-    const hoursSavedThisMonth = 75 * totalCandidates;
+
+    // Real calculation: AI takes ~30s per candidate for full pipeline
+    const avgSecondsPerCandidate = 30;
+    const totalSeconds = totalCandidates * avgSecondsPerCandidate;
+    const hoursSavedThisMonth = Math.round(totalSeconds / 3600);
+
+    // Real avg match from pipeline results
+    const pipelineScores = pipelineResults.filter(r => r.screened_score != null).map(r => r.screened_score!);
+    const avgPipelineScore = pipelineScores.length ? Math.round(pipelineScores.reduce((a, b) => a + b, 0) / pipelineScores.length) : avgMatch;
+
+    // Total pipeline runs completed
+    const completedRuns = pipelineRuns.filter(r => r.status === "completed").length;
 
     return {
       totalCandidates,
       activeAIAgents,
       highMatchCandidates,
       hoursSavedThisMonth,
+      avgPipelineScore,
+      completedRuns,
     };
-  }, [candidates, agents, config.highMatchThreshold]);
+  }, [candidates, agents, config.highMatchThreshold, pipelineResults, pipelineRuns, avgMatch]);
 
   // Chart data - computed from config + live candidate state
   const chartData = useMemo(() => {
-    // Skill match bar chart: transform config weights into actual counts
-    const skillMatchData = config.skillMatchData.map(skill => ({
-      name: skill.name,
-      Count: Math.max(1, Math.floor(stats.totalCandidates * skill.weight)),
-      color: skill.color,
-    }));
+    // Real skill distribution from pipeline results
+    const allSkills = pipelineResults
+      .filter(r => r.parsed_skills)
+      .flatMap(r => r.parsed_skills!.split(",").map(s => s.trim()).filter(s => s.length > 0));
+    const skillCounts: Record<string, number> = {};
+    allSkills.forEach(s => { skillCounts[s] = (skillCounts[s] || 0) + 1; });
+    const sortedSkills = Object.entries(skillCounts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const skillMatchData = sortedSkills.length > 0
+      ? sortedSkills.map(([name, count]) => ({
+          name, Count: count,
+          color: config.skillMatchData.find(s => s.name.toLowerCase() === name.toLowerCase())?.color || "#6366f1",
+        }))
+      : config.skillMatchData.map(skill => ({
+          name: skill.name,
+          Count: Math.max(1, Math.floor(stats.totalCandidates * skill.weight)),
+          color: skill.color,
+        }));
 
     // Pipeline status doughnut: aggregate live candidate counts + apply config colors
     const candidatesByStatus = candidates.reduce((acc, cand) => {
@@ -397,13 +478,21 @@ Required Skills:
     });
 
     return { skillMatchData, pipelineStatusData };
-  }, [candidates, config, stats.totalCandidates]);
+  }, [candidates, config, stats.totalCandidates, pipelineResults]);
 
   // Dynamically compute leaderboard candidate ranking from the candidates state
   const leaderboardCandidates = useMemo(() => {
     const scored = candidates
       .filter((c) => c.matchScore !== null && c.matchScore !== undefined)
       .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+
+    // Build a map of candidate_id -> skills from pipeline results (real AI data)
+    const pipelineSkillsMap: Record<string, string[]> = {};
+    pipelineResults.forEach(r => {
+      if (r.parsed_skills) {
+        pipelineSkillsMap[r.candidate_id] = r.parsed_skills.split(",").map(s => s.trim()).filter(s => s.length > 0);
+      }
+    });
 
     return scored.map((c, index) => {
       const initials = c.name
@@ -413,19 +502,9 @@ Required Skills:
         .toUpperCase()
         .slice(0, 2);
 
-      let skills = ["TypeScript", "React", "REST APIs"];
-      const lowerRole = c.role.toLowerCase();
-      if (lowerRole.includes("full stack") || lowerRole.includes("frontend") || lowerRole.includes("web")) {
-        skills = ["React 19", "TypeScript", "Tailwind CSS", "API Orchestration"];
-      } else if (lowerRole.includes("design") || lowerRole.includes("ux") || lowerRole.includes("ui")) {
-        skills = ["Figma", "Design Systems", "Prototyping", "UI Motion"];
-      } else if (lowerRole.includes("devops") || lowerRole.includes("cloud") || lowerRole.includes("infrastructure")) {
-        skills = ["AWS", "Docker", "Kubernetes", "CI/CD Pipelines"];
-      } else if (lowerRole.includes("product") || lowerRole.includes("vp")) {
-        skills = ["Product Roadmap", "SaaS Metrics", "Enterprise Scaling", "User Research"];
-      } else if (lowerRole.includes("recruiter") || lowerRole.includes("hr")) {
-        skills = ["Talent Strategy", "Behavioral Interviewing", "ATS Systems", "Onboarding Flows"];
-      }
+      // Use real AI-extracted skills from pipeline if available
+      const realSkills = pipelineSkillsMap[c.id];
+      const skills = realSkills && realSkills.length > 0 ? realSkills : (c.skills ? c.skills.split(",").map(s => s.trim()).filter(s => s.length > 0) : ["Skills pending AI analysis"]);
 
       const scoreVal = c.matchScore || 0;
       let status: "Invite Sent" | "Pending" | "Rejected" = "Pending";
@@ -445,27 +524,21 @@ Required Skills:
         status,
       };
     });
-  }, [candidates]);
+  }, [candidates, pipelineResults]);
 
-  // Handles Simulated AI Resume Screening
-  const triggerAIScreen = (candidateId: string) => {
+  // Handles AI Resume Screening via real Mistral API
+  const triggerAIScreen = async (candidateId: string) => {
     setCandidateStage(candidateId, "Awaiting Ranking");
 
     showToast("Agentix AI: ScreenerX is parsing resume & analyzing match compatibility...");
 
-    setTimeout(() => {
-      const calculatedScore = Math.floor(Math.random() * (98 - 70 + 1)) + 70;
-      const generatedSummaries = [
-        "Highly aligned frontend expertise. Demonstrates proficient TypeScript architectural design and strong Tailwind layout skills.",
-        "Solid infrastructure engineering records. Proficient in automated Kubernetes deployment strategies, CI/CD pipes, and AWS security blueprints.",
-        "Demonstrated talent strategy alignment. Skilled in high-volume team scaling, structured behavioral screen designs, and onboarding syncs."
-      ];
-      const randomSummary = generatedSummaries[Math.floor(Math.random() * generatedSummaries.length)];
-
-      updateCandidateScore(candidateId, calculatedScore, randomSummary);
-
-      showToast(`Screening complete for ${candidates.find(c => c.id === candidateId)?.name || 'candidate'}. Score: ${calculatedScore}%`);
-    }, 2500);
+    try {
+      await screenCandidate(candidateId, jobDescription);
+      const updated = candidates.find(c => c.id === candidateId);
+      showToast(`Screening complete for ${updated?.name || 'candidate'}. Score: ${updated?.matchScore || 'N/A'}%`);
+    } catch (e) {
+      showToast(`Screening failed: ${e}`);
+    }
   };
 
   // Handles Adding Candidate
@@ -497,23 +570,32 @@ Required Skills:
     showToast(`Successfully added ${newCandName} to recruitment pipeline.`);
   };
 
-  // Handles Agent Configuration edits
-  const handleAgentConfigSave = (e: React.FormEvent) => {
+  // Handles Agent Configuration edits (persists to backend)
+  const handleAgentConfigSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedAgentForConfig) return;
-    showToast(`Configuration updated for ${selectedAgentForConfig.name}.`);
-    setSelectedAgentForConfig(null);
+    try {
+      await updateAgentConfig(selectedAgentForConfig.id, {
+        confidence_threshold: selectedAgentForConfig.config.confidenceThreshold,
+        channel: selectedAgentForConfig.config.channel,
+        auto_screen: selectedAgentForConfig.config.autoScreen,
+      });
+      showToast(`Configuration updated for ${selectedAgentForConfig.name}.`);
+      setSelectedAgentForConfig(null);
+    } catch (e) {
+      showToast(`Failed to save config: ${e}`);
+    }
   };
 
-  // Run Global System Diagnostics (Mock action)
-  const runSystemDiagnostic = () => {
+  // Run Global System Diagnostics (Real API call)
+  const runSystemDiagnostic = async () => {
     setDiagnosticRunning(true);
-    setDiagnosticResult(null);
-    setTimeout(() => {
-      setDiagnosticRunning(false);
-      const agentCount = agents.length;
-      setDiagnosticResult(`All systems nominal. ${plural(agentCount, "HR micro-agent")} responsive. Latency: 12ms. API gateways fully authenticated via Clerk SaaS core.`);
-    }, 1800);
+    try {
+      await runDiagnosticsAction();
+    } catch (e) {
+      console.error(e);
+    }
+    setDiagnosticRunning(false);
   };
 
   // Auth helper methods
@@ -545,6 +627,8 @@ Required Skills:
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
         onMenuToggle={() => setIsSidebarOpen(true)}
+        notifications={notifications}
+        onMarkRead={markNotificationRead}
       />
 
       {/* Landing Page - full width, no sidebar */}
@@ -615,6 +699,14 @@ Required Skills:
                       currentTab={currentTab}
                       onNavigate={(t) => { setCurrentTab(t); setIsSidebarOpen(false); }}
                     />
+                    <SidebarItem
+                      tab="pipeline"
+                      label="AI Pipeline"
+                      badge={pipelineRuns.length > 0 ? `${pipelineRuns.length} Runs` : undefined}
+                      badgeClass="bg-indigo-50 text-indigo-700 border border-indigo-200/50"
+                      currentTab={currentTab}
+                      onNavigate={(t) => { setCurrentTab(t); setIsSidebarOpen(false); }}
+                    />
                   </div>
                 </motion.aside>
               </>
@@ -665,6 +757,14 @@ Required Skills:
                 currentTab={currentTab}
                 onNavigate={setCurrentTab}
               />
+              <SidebarItem
+                tab="pipeline"
+                label="AI Pipeline"
+                badge={pipelineRuns.length > 0 ? `${pipelineRuns.length} Runs` : undefined}
+                badgeClass="bg-indigo-50 text-indigo-700 border border-indigo-200/50"
+                currentTab={currentTab}
+                onNavigate={setCurrentTab}
+              />
             </nav>
           </aside>
 
@@ -685,12 +785,13 @@ Required Skills:
               {currentTab === "dashboard" && "Dashboard"}
               {currentTab === "candidates" && "Candidates"}
               {currentTab === "analytics" && "Analytics"}
+              {currentTab === "pipeline" && "AI Pipeline"}
             </h1>
           )}
         </div>
 
         {/* Diagnostic Results Display */}
-        {diagnosticResult && (
+        {(diagnosticResult?.message) && (
           <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -701,11 +802,11 @@ Required Skills:
             <div className="flex-1">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-emerald-400 uppercase tracking-wider text-[10px]">DIAGNOSTIC_OK</span>
-                <button onClick={() => setDiagnosticResult(null)} className="text-slate-500 hover:text-slate-300">
+                <button onClick={() => useAppStore.setState({ diagnosticResult: null })} className="text-slate-500 hover:text-slate-300">
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <p className="mt-1 leading-relaxed text-slate-300">{diagnosticResult}</p>
+              <p className="mt-1 leading-relaxed text-slate-300">{diagnosticResult?.message}</p>
             </div>
           </motion.div>
         )}
@@ -777,45 +878,42 @@ Required Skills:
 
                   {/* Right Column: Advanced Bulk Upload Ingestion & Control Hub */}
                   <div className="space-y-6">
-                    <BulkUploadZone 
-                      onFilesProcessed={(count) => {
-                        const names = [
-                          "Clara Fontaine", "Liam Novak", "Rajesh Kumar", 
-                          "Alex Rivera", "Jordan Smith", "Taylor Chen", 
-                          "Morgan Taylor", "Casey Johnson", "Jamie Lee"
-                        ];
-                        const fileTypes = ["PDF", "DOCX", "DOC", "CSV"];
-                        
-                        const newStaged = Array.from({ length: count }).map((_, idx) => {
-                          const randName = names[idx % names.length];
-                          const ext = fileTypes[Math.floor(Math.random() * fileTypes.length)].toLowerCase();
-                          const finalName = `resume_${randName.toLowerCase().replace(" ", "_")}.${ext}`;
-                          return {
+                      <BulkUploadZone 
+                        onFilesProcessed={(count) => {
+                          const newStaged = Array.from({ length: count }).map((_, idx) => ({
                             id: `bulk-staged-${Date.now()}-${idx}`,
-                            name: finalName,
+                            name: `resume_candidate_${idx + 1}.pdf`,
                             size: `${(Math.random() * 150 + 100).toFixed(0)} KB`,
                             status: "staged" as const
-                          };
-                        });
-                        setStagedCvs(prev => [...prev, ...newStaged]);
-                        setFiles(prev => [...prev, ...newStaged]);
-                      }}
-                      onFilesSelected={(fileEntries) => {
-                        const newStaged = fileEntries.map((f) => ({
-                          id: f.id,
-                          name: f.name,
-                          size: f.size,
-                          status: "staged" as const
-                        }));
-                        setStagedCvs(prev => [...prev, ...newStaged]);
-                        setFiles(prev => [...prev, ...newStaged]);
-                        setActualFiles(prev => {
-                          const next = new Map(prev);
-                          fileEntries.forEach(f => next.set(f.id, f.file));
-                          return next;
-                        });
-                      }}
-                      showToast={showToast}
+                          }));
+                          setStagedCvs(prev => [...prev, ...newStaged]);
+                          setFiles(prev => [...prev, ...newStaged]);
+                        }}
+                        onFilesSelected={(fileEntries) => {
+                          const newStaged = fileEntries.map((f) => ({
+                            id: f.id,
+                            name: f.name,
+                            size: f.size,
+                            status: "staged" as const
+                          }));
+                          setStagedCvs(prev => [...prev, ...newStaged]);
+                          setFiles(prev => [...prev, ...newStaged]);
+                          setActualFiles(prev => {
+                            const next = new Map(prev);
+                            fileEntries.forEach(f => next.set(f.id, f.file));
+                            return next;
+                          });
+                        }}
+                        showToast={showToast}
+                      />
+
+                    {/* Fetch from Job Boards */}
+                    <FetchFilters
+                      filters={boardFilters}
+                      onChange={setBoardFilters}
+                      onFetch={handleFetchFromBoards}
+                      isFetching={isFetchingFromBoards}
+                      platformBreakdown={fetchPlatformBreakdown}
                     />
 
                     {/* Staged Resumes Interactive Panel */}
@@ -866,33 +964,103 @@ Required Skills:
                             </div>
                           ))}
                         </div>
-                      ) : (
+                        ) : (
                         <div className="p-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-center">
                           <p className="text-xs text-slate-400 font-medium">Staging buffer is empty</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5 max-w-xs">Upload resumes or force fetch files above to load candidates into current assessment batch.</p>
-                          <div className="flex items-center gap-2 mt-3.5">
-                            <span className="text-[10px] text-slate-400">Quick Sandbox Action:</span>
-                            <button
-                              onClick={() => {
-                                setStagedCvs([
-                                  { id: "cv-1", name: "resume_clara_fontaine.pdf", size: "244 KB", status: "staged" },
-                                  { id: "cv-2", name: "resume_liam_novak.pdf", size: "189 KB", status: "staged" },
-                                  { id: "cv-3", name: "resume_rajesh_kumar.pdf", size: "312 KB", status: "staged" }
-                                ]);
-                                setActualFiles(new Map());
-                                showToast("Staged 3 diagnostic candidate CVs");
-                              }}
-                              className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline"
-                            >
-                              Load 3 Demo Resumes
-                            </button>
-                          </div>
+                          <p className="text-[10px] text-slate-400 mt-0.5 max-w-xs">Upload resume files above or fetch candidates from job boards to load into assessment batch.</p>
                         </div>
                       )}
                     </div>
                   </div>
 
                 </div>
+
+                {/* Fetched Candidates Results */}
+                {fetchedCandidates.length > 0 && (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                        <svg className="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Real Candidates from Job Boards
+                        <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                          {fetchedCandidates.length} found
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">({fetchTimeMs}ms)</span>
+                      </h3>
+                      <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                        {Object.entries(fetchPlatformBreakdown).filter(([_, count]) => count > 0).map(([platform, count]) => {
+                          const color = platform.includes("Rozee") ? "bg-emerald-500" : platform.includes("LinkedIn") ? "bg-blue-500" : "bg-purple-500"
+                          return (
+                            <span key={platform} className="flex items-center gap-1">
+                              <span className={`inline-block w-2 h-2 rounded-full ${color}`} />
+                              {platform}: {count}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-100 bg-slate-50/30">
+                            <th className="text-left px-4 py-2.5 font-semibold text-slate-500">Name / Role</th>
+                            <th className="text-left px-4 py-2.5 font-semibold text-slate-500">Skills</th>
+                            <th className="text-center px-4 py-2.5 font-semibold text-slate-500">Score</th>
+                              <th className="text-center px-4 py-2.5 font-semibold text-slate-500">Source</th>
+                            <th className="text-center px-4 py-2.5 font-semibold text-slate-500">Gender</th>
+                            <th className="text-center px-4 py-2.5 font-semibold text-slate-500">Shift</th>
+                            <th className="text-center px-4 py-2.5 font-semibold text-slate-500">Remote</th>
+                            <th className="text-center px-4 py-2.5 font-semibold text-slate-500">Age</th>
+                            <th className="text-center px-4 py-2.5 font-semibold text-slate-500">Exp</th>
+                            <th className="text-center px-4 py-2.5 font-semibold text-slate-500">Location</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {fetchedCandidates.map((c, i) => (
+                            <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition">
+                              <td className="px-4 py-2.5">
+                                <div className="font-semibold text-slate-800">{c.name}</div>
+                                <div className="text-[10px] text-slate-400">{c.role}</div>
+                              </td>
+                              <td className="px-4 py-2.5 max-w-[200px]">
+                                <div className="text-slate-600 truncate" title={c.skills || ""}>{c.skills || "-"}</div>
+                              </td>
+                              <td className="px-4 py-2.5 text-center">
+                                {c.match_score ? (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    c.match_score >= 80 ? "bg-emerald-50 text-emerald-700" :
+                                    c.match_score >= 60 ? "bg-amber-50 text-amber-700" :
+                                    "bg-rose-50 text-rose-700"
+                                  }`}>
+                                    {c.match_score}%
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300">-</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 text-center">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700">
+                                  {c.source_platform || "Rozee.pk"}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-center text-slate-600">{c.gender || "-"}</td>
+                              <td className="px-4 py-2.5 text-center text-slate-600">{c.shift_preference || "-"}</td>
+                              <td className="px-4 py-2.5 text-center">
+                                {c.is_remote === true ? <span className="text-emerald-600 font-bold">Yes</span> :
+                                 c.is_remote === false ? <span className="text-slate-400">No</span> : "-"}
+                              </td>
+                              <td className="px-4 py-2.5 text-center text-slate-600">{c.age || "-"}</td>
+                              <td className="px-4 py-2.5 text-center text-slate-600">{c.experience_years != null ? `${c.experience_years}y` : "-"}</td>
+                              <td className="px-4 py-2.5 text-center text-slate-600">{c.location || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 {/* Full-Width Scoring Run Button or Progress Bar */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
@@ -966,11 +1134,13 @@ Required Skills:
                 {/* Asynchronous Processing Queue */}
                 <div className="my-2">
                   <AgentQueue
+                    items={queueItems}
                     onTriggerToast={showToast}
                     onAdvanceStage={(name) => {
                       const match = candidates.find(c => c.name === name);
                       if (match) advanceCandidateStage(match.id);
                     }}
+                    refreshQueue={fetchQueue}
                   />
                 </div>
 
@@ -980,7 +1150,38 @@ Required Skills:
             {/* ----------------- TAB: AI AGENTS ----------------- */}
             {currentTab === "agents" && (
               <div id="agents-tab" className="space-y-6">
-                <AgentAnalytics mode="agents" bots={agents} onToggleBot={toggleAgent} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
+                <AgentAnalytics mode="agents" bots={agents} onToggleBot={toggleAgent} onRunBot={async (id) => { try { if (id === "fetcher") { await api.post("/api/agents/fetcher/run-now"); showToast("Fetcher bot started"); } else if (id === "scheduler") { await api.post("/api/agents/scheduler/send-interviews"); showToast("Scheduler bot started"); } } catch (e: any) { showToast(`Bot error: ${e.message}`); } }} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
+                
+                {/* System Diagnostics */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">System Diagnostics</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Run a health check on all agents and backend services.</p>
+                    </div>
+                    <button
+                      onClick={runSystemDiagnostic}
+                      disabled={diagnosticRunning}
+                      className={`px-5 py-2.5 rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-2 cursor-pointer ${
+                        diagnosticRunning
+                          ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                          : "bg-slate-900 text-white hover:bg-slate-800"
+                      }`}
+                    >
+                      {diagnosticRunning ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        <>
+                          <Activity className="h-3.5 w-3.5" />
+                          Run Diagnostics
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1003,6 +1204,41 @@ Required Skills:
                       <Plus className="h-4 w-4" />
                       <span>Add Candidate</span>
                     </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const result = await api.candidates.enrichAll();
+                          showToast(`Enriched ${result.enriched} candidates (scanned ${result.scanned})`);
+                          await useAppStore.getState().fetchCandidates();
+                        } catch (e: any) {
+                          showToast(`Enrich failed: ${e.message || e}`);
+                        }
+                      }}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition focus:outline-none"
+                      id="enrich-candidates-btn"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      <span>Enrich All</span>
+                    </button>
+                    {candidates.length > 0 && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete all ${candidates.length} candidates and results? This cannot be undone.`)) return;
+                          try {
+                            await api.candidates.deleteAll();
+                            showToast(`Deleted all ${candidates.length} candidates`);
+                            await useAppStore.getState().fetchCandidates();
+                          } catch (e: any) {
+                            showToast(`Delete failed: ${e.message || e}`);
+                          }
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition focus:outline-none"
+                        id="delete-all-candidates-btn"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>Delete All</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1044,9 +1280,14 @@ Required Skills:
                       <thead className="bg-slate-50/70 font-sans text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                         <tr>
                           <th className="px-6 py-3.5">Candidate Details</th>
-                          <th className="px-6 py-3.5">Role / Department</th>
-                          <th className="px-6 py-3.5">Applied Date</th>
-                          <th className="px-6 py-3.5 text-center">AI Match Score</th>
+                          <th className="px-6 py-3.5">Role / Dept</th>
+                          <th className="px-4 py-3.5 text-center">AI Score</th>
+                          <th className="px-4 py-3.5 text-center">Gender</th>
+                          <th className="px-4 py-3.5 text-center">Shift</th>
+                          <th className="px-4 py-3.5 text-center">Remote</th>
+                          <th className="px-4 py-3.5 text-center">Age</th>
+                          <th className="px-4 py-3.5 text-center">Exp</th>
+                          <th className="px-4 py-3.5 text-center">Skills</th>
                           <th className="px-6 py-3.5">Status</th>
                           <th className="relative px-6 py-3.5 text-right">Actions</th>
                         </tr>
@@ -1066,24 +1307,45 @@ Required Skills:
                                   </div>
                                 </div>
                               </td>
-                              
+
                               <td className="whitespace-nowrap px-6 py-4.5">
                                 <div className="font-medium text-slate-800">{cand.role}</div>
                                 <div className="text-slate-500 mt-0.5">{cand.department}</div>
                               </td>
 
-                              <td className="whitespace-nowrap px-6 py-4.5 text-slate-500">
-                                {cand.appliedDate}
-                              </td>
-
-                              <td className="whitespace-nowrap px-6 py-4.5 text-center">
-                                  {cand.matchScore ? (
+                              <td className="whitespace-nowrap px-4 py-4.5 text-center">
+                                {cand.matchScore ? (
                                   <div className="inline-flex items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 py-1 text-indigo-700 font-mono font-bold">
                                     {cand.matchScore}%
                                   </div>
                                 ) : (
-                                  <span className="text-slate-400 font-medium">Unscreened</span>
+                                  <span className="text-slate-400 font-medium">-</span>
                                 )}
+                              </td>
+
+                              <td className="whitespace-nowrap px-4 py-4.5 text-center text-slate-600 text-xs">
+                                {cand.gender || "-"}
+                              </td>
+
+                              <td className="whitespace-nowrap px-4 py-4.5 text-center text-slate-600 text-xs">
+                                {cand.shiftPreference || "-"}
+                              </td>
+
+                              <td className="whitespace-nowrap px-4 py-4.5 text-center text-xs">
+                                {cand.isRemote === true ? <span className="text-emerald-600 font-bold">Yes</span> :
+                                 cand.isRemote === false ? <span className="text-slate-400">No</span> : "-"}
+                              </td>
+
+                              <td className="whitespace-nowrap px-4 py-4.5 text-center text-slate-600 text-xs">
+                                {cand.age ?? "-"}
+                              </td>
+
+                              <td className="whitespace-nowrap px-4 py-4.5 text-center text-slate-600 text-xs">
+                                {cand.experienceYears != null ? `${cand.experienceYears}y` : "-"}
+                              </td>
+
+                              <td className="whitespace-nowrap px-4 py-4.5 text-slate-600 text-xs max-w-[140px] truncate" title={cand.skills || ""}>
+                                {cand.skills || "-"}
                               </td>
 
                               <td className="whitespace-nowrap px-6 py-4.5">
@@ -1151,7 +1413,7 @@ Required Skills:
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={6} className="px-6 py-8 md:py-12 text-center text-slate-500">
+                            <td colSpan={11} className="px-6 py-8 md:py-12 text-center text-slate-500">
                               <div className="flex flex-col items-center justify-center">
                                 <Search className="h-8 w-8 text-slate-300 mb-2" />
                                 <p className="text-sm font-semibold text-slate-700">No candidates found</p>
@@ -1172,7 +1434,66 @@ Required Skills:
                 <div className="border-b border-slate-200 pb-5">
                   <h2 className="text-xl font-bold text-slate-900">Analytics & Insights</h2>
                 </div>
-                <AgentAnalytics mode="analytics" bots={agents} onToggleBot={toggleAgent} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
+                <AgentAnalytics mode="analytics" bots={agents} onToggleBot={toggleAgent} onRunBot={async (id) => { try { if (id === "fetcher") { await api.post("/api/agents/fetcher/run-now"); showToast("Fetcher bot started"); } else if (id === "scheduler") { await api.post("/api/agents/scheduler/send-interviews"); showToast("Scheduler bot started"); } } catch (e: any) { showToast(`Bot error: ${e.message}`); } }} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
+              </div>
+            )}
+
+            {/* ----------------- TAB: PIPELINE ----------------- */}
+            {currentTab === "pipeline" && (
+              <div className="space-y-6" id="pipeline-tab">
+                <div className="border-b border-slate-200 pb-5">
+                  <h2 className="text-xl font-bold text-slate-900">4-Agent AI Pipeline</h2>
+                  <p className="text-xs text-slate-500 mt-1">Run the full candidate processing pipeline: Parse → Screen → Deep Rank → Finalize</p>
+                </div>
+                {selectedPipelineRunId && pipelineResults.length > 0 ? (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => { setSelectedPipelineRunId(null); }}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        ← Back to Pipeline Runner
+                      </button>
+                    </div>
+                    <ResultsDashboard
+                      run={pipelineRuns.find(r => r.id === selectedPipelineRunId) || null}
+                      results={pipelineResults}
+                      showToast={showToast}
+                    />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <PipelineRunner
+                      jobDescription={jobDescription}
+                      candidateIds={candidates.map(c => c.id)}
+                      pastRuns={pipelineRuns}
+                      onRunPipeline={runPipelineAction}
+                      onSelectRun={async (runId) => {
+                        await getPipelineRun(runId);
+                        setSelectedPipelineRunId(runId);
+                      }}
+                      showToast={showToast}
+                    />
+                    <div>
+                      {pipelineRuns.length > 0 && !selectedPipelineRunId && (
+                        <ResultsDashboard
+                          run={pipelineRuns[0]}
+                          results={pipelineResults}
+                          showToast={showToast}
+                        />
+                      )}
+                      {pipelineRuns.length === 0 && (
+                        <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm flex flex-col items-center justify-center text-center h-full">
+                          <div className="text-4xl mb-3">AI</div>
+                          <h3 className="text-sm font-bold text-slate-700">Run the Pipeline</h3>
+                          <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                            Select candidates and a job description on the Dashboard tab, then run the 4-agent pipeline here.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

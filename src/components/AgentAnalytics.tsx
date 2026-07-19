@@ -51,6 +51,7 @@ interface AgentAnalyticsProps {
   mode?: "agents" | "analytics";
   bots: BotState[];
   onToggleBot: (id: string) => void;
+  onRunBot?: (id: string) => void;
   candidates?: CandidateData[];
   /** Overrides the hardcoded processing time ms value — sourced from dashboardConfig */
   processingTimeMs?: number;
@@ -60,7 +61,7 @@ interface AgentAnalyticsProps {
   chartData?: ChartData;
 }
 
-export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, candidates = [], processingTimeMs, cvProcessedTrend, chartData }: AgentAnalyticsProps) {
+export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, onRunBot, candidates = [], processingTimeMs, cvProcessedTrend, chartData }: AgentAnalyticsProps) {
   // Calculate dynamic analytics from actual candidate data
   const totalCvs = candidates.length;
   const avgMatchScore = candidates.length > 0 
@@ -174,6 +175,17 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, can
                         {bot.isRunning ? "Running" : "Paused"}
                       </span>
                     </div>
+
+                    {/* Run Now button for fetcher + scheduler bots */}
+                    {(bot.id === "fetcher" || bot.id === "scheduler") && onRunBot && (
+                      <button
+                        onClick={() => onRunBot(bot.id)}
+                        className="mt-1 inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition"
+                      >
+                        <Zap className="h-3 w-3" />
+                        Run Now
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

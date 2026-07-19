@@ -1,15 +1,25 @@
 import os
+import threading
+import time
 from dotenv import load_dotenv
+from sqlalchemy import text
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import Base, engine
+from app.database import Base, engine, SessionLocal
 from app import models
-from app.routers import auth, candidates, agents, dashboard
+from app.routers import auth, candidates, agents, dashboard, diagnostics, notifications, jobs, queue, pipeline
 
 load_dotenv()
 
 Base.metadata.create_all(bind=engine)
+
+
+# Migrate existing tables: add columns if missing
+with engine.connect() as conn:
+    conn.execute(text("ALTER TABLE job_descriptions ADD COLUMN IF NOT EXISTS embedding TEXT"))
+    conn.commit()
+
 
 app = FastAPI(title="Agentix HR Backend")
 
@@ -24,12 +34,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(candidates.router)
-app.include_router(agents.router)
-app.include_router(dashboard.router)
+app.include_router(auth.router, prefix="/api")
+app.include_router(candidates.router, prefix="/api")
+app.include_router(agents.router, prefix="/api")
+app.include_router(dashboard.router, prefix="/api")
+app.include_router(diagnostics.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
+app.include_router(jobs.router, prefix="/api")
+app.include_router(queue.router, prefix="/api")
+app.include_router(pipeline.router, prefix="/api")
 
 
 @app.get("/")
 def root():
     return {"status": "Agentix backend is working"}
+
+
+FETCH_INTERVAL_HOURS = int(os.getenv("FETCH_INTERVAL_HOURS", "6"))
+
+
+def _background_fetcher():
+    time.sleep(60)
+    while True:
+        try:
+            db = SessionLocal()
+            fetcher_agent = db.query(models.Agent).filter(models.Agent.id == "fetcher").first()
+            if fetcher_agent and fetcher_agent.is_running:
+                from app.routers.agents import _run_fetcher_bot
+                print("[scheduler] Background fetcher: running auto-fetch cycle...")
+                _run_fetcher_bot(db)
+            db.close()
+        except Exception as e:
+            print(f"[scheduler] Background fetcher error: {e}")
+        time.sleep(FETCH_INTERVAL_HOURS * 3600)
+
+
+scheduler_thread = threading.Thread(target=_background_fetcher, daemon=True)
+scheduler_thread.start()

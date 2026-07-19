@@ -34,9 +34,11 @@ interface NavbarProps {
   onSignIn: () => void;
   onSignOut: () => void;
   onMenuToggle?: () => void;
+  notifications?: { id: string; message: string; type: string; isRead: boolean; createdAt: string }[];
+  onMarkRead?: (id: string) => void;
 }
 
-export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSignOut, onMenuToggle }: NavbarProps) {
+export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSignOut, onMenuToggle, notifications = [], onMarkRead }: NavbarProps) {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
@@ -140,17 +142,22 @@ export default function Navbar({ currentTab, setCurrentTab, user, onSignIn, onSi
                         <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-2 mb-1">
                           Notifications
                         </div>
-                        <div className="space-y-1">
-                          <div className="rounded-lg p-2.5 hover:bg-slate-50 text-left transition text-xs">
-                            <p className="font-semibold text-slate-800">Agent Onboarding Complete</p>
-                            <p className="text-slate-500 mt-0.5">ScreenerX auto-reviewed 14 new candidates today.</p>
-                            <span className="text-[10px] text-indigo-600 font-medium mt-1 inline-block">10m ago</span>
-                          </div>
-                          <div className="rounded-lg p-2.5 hover:bg-slate-50 text-left transition text-xs">
-                            <p className="font-semibold text-slate-800">Interview Scheduled</p>
-                            <p className="text-slate-500 mt-0.5">SchedulerPro locked in candidate Alex Rivera for Tuesday.</p>
-                            <span className="text-[10px] text-indigo-600 font-medium mt-1 inline-block">1h ago</span>
-                          </div>
+                        <div className="space-y-1 max-h-60 overflow-y-auto">
+                          {notifications.length > 0 ? (
+                            notifications.map((n) => (
+                              <div
+                                key={n.id}
+                                onClick={() => onMarkRead?.(n.id)}
+                                className={`rounded-lg p-2.5 hover:bg-slate-50 text-left transition text-xs cursor-pointer ${n.isRead ? 'opacity-60' : 'border-l-2 border-indigo-500'}`}
+                              >
+                                <p className="font-semibold text-slate-800">{n.type}</p>
+                                <p className="text-slate-500 mt-0.5">{n.message}</p>
+                                <span className="text-[10px] text-indigo-600 font-medium mt-1 inline-block">{new Date(n.createdAt).toLocaleDateString()}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="p-4 text-center text-slate-400 text-xs">No notifications</div>
+                          )}
                         </div>
                       </motion.div>
                     </>

@@ -4,12 +4,7 @@ import {
   FileText, 
   Database, 
   RefreshCw, 
-  CheckCircle2, 
-  Play, 
-  AlertCircle, 
-  Layers,
-  ArrowRight,
-  Sparkles
+  Layers
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -35,7 +30,6 @@ const plural = (count: number, singular: string, pluralForm?: string): string =>
 
 export default function BulkUploadZone({ onFilesProcessed, onFilesSelected, showToast }: BulkUploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [isForceFetching, setIsForceFetching] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<StagedFile[]>([]);
   const [uploadProgressPercent, setUploadProgressPercent] = useState(0);
   const [uploadingMessage, setUploadingMessage] = useState("");
@@ -146,34 +140,6 @@ export default function BulkUploadZone({ onFilesProcessed, onFilesSelected, show
     }, 300);
   };
 
-  const triggerForceFetch = () => {
-    setIsForceFetching(true);
-    if (showToast) {
-      showToast("Triggering Fetcher Bot: Syncing external ATS, email inboxes & Shared Folders...");
-    }
-
-    setTimeout(() => {
-      setIsForceFetching(false);
-      const randomFetchCount = Math.floor(Math.random() * 3) + 2; // 2 to 4 files
-      if (showToast) {
-        showToast(`Fetcher Bot Completed! Synced and downloaded ${plural(randomFetchCount, "new resume")}.`);
-      }
-
-      // Automatically stage the fetched resumes for processing
-      const dummyFetched: StagedFile[] = Array.from({ length: randomFetchCount }).map((_, idx) => ({
-        id: `fetched-${Date.now()}-${idx}`,
-        name: `fetched_resume_candidate_0${idx + 1}.pdf`,
-        size: "185 KB",
-        type: "PDF",
-        progress: 0,
-        status: "uploading" as const
-      }));
-
-      setUploadingFiles(dummyFetched);
-      simulateFileUploads(dummyFetched);
-    }, 2000);
-  };
-
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" id="agentix-bulk-upload-widget">
       {/* Title block */}
@@ -191,118 +157,52 @@ export default function BulkUploadZone({ onFilesProcessed, onFilesSelected, show
         </div>
       </div>
 
-      {/* Main split-view container */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
-        
-        {/* Left Side: Manual Bulk Upload Area */}
-        <div className="p-6 space-y-4">
-          <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Manual Bulk Upload</h4>
+      {/* Full-width Manual Bulk Upload Area */}
+      <div className="p-6">
+        <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-4">Upload Candidate CVs</h4>
 
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => document.getElementById("bulk-file-uploader-input")?.click()}
-            className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 ${
-              isDragging 
-                ? "border-indigo-500 bg-indigo-50/20" 
-                : "border-slate-200 hover:border-slate-300 bg-slate-50/30 hover:bg-slate-50/70"
-            }`}
-          >
-            <input
-              id="bulk-file-uploader-input"
-              type="file"
-              multiple
-              accept=".pdf,.doc,.docx,.csv"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 mb-3 border border-indigo-100">
-              <UploadCloud className="h-5.5 w-5.5" />
-            </div>
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => document.getElementById("bulk-file-uploader-input")?.click()}
+          className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-200 ${
+            isDragging 
+              ? "border-indigo-500 bg-indigo-50/20" 
+              : "border-slate-200 hover:border-slate-300 bg-slate-50/30 hover:bg-slate-50/70"
+          }`}
+        >
+          <input
+            id="bulk-file-uploader-input"
+            type="file"
+            multiple
+            accept=".pdf,.doc,.docx,.csv"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 mb-3 border border-indigo-100">
+            <UploadCloud className="h-5.5 w-5.5" />
+          </div>
 
-            <p className="text-xs font-bold text-slate-800">Drag &amp; drop resume batches here, or browse files</p>
-            <p className="text-[10px] text-slate-400 mt-1 max-w-xs">Supports concurrent uploads for PDF, DOC, DOCX, and CSV formats up to 15MB each.</p>
+          <p className="text-xs font-bold text-slate-800">Drag &amp; drop resume files here, or browse</p>
+          <p className="text-[10px] text-slate-400 mt-1 max-w-xs">Supports PDF, DOC, DOCX, and CSV formats up to 15MB each.</p>
 
-            {/* File Type Badges explicitly stated with Lucide Icons */}
-            <div className="flex items-center gap-2 mt-4 flex-wrap justify-center">
-              <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600 border border-slate-200/60">
-                <FileText className="h-2.5 w-2.5 text-red-500" />
-                PDF
-              </span>
-              <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600 border border-slate-200/60">
-                <FileText className="h-2.5 w-2.5 text-blue-500" />
-                DOCX
-              </span>
-              <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600 border border-slate-200/60">
-                <FileText className="h-2.5 w-2.5 text-cyan-600" />
-                DOC
-              </span>
-              <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600 border border-slate-200/60">
-                <Database className="h-2.5 w-2.5 text-emerald-600" />
-                CSV
-              </span>
-            </div>
+          <div className="flex items-center gap-2 mt-4 flex-wrap justify-center">
+            <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600 border border-slate-200/60">
+              <FileText className="h-2.5 w-2.5 text-red-500" />
+              PDF
+            </span>
+            <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600 border border-slate-200/60">
+              <FileText className="h-2.5 w-2.5 text-blue-500" />
+              DOCX
+            </span>
+            <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-600 border border-slate-200/60">
+              <Database className="h-2.5 w-2.5 text-emerald-600" />
+              CSV
+            </span>
           </div>
         </div>
-
-        {/* Right Side: Auto-Fetch Mode Card */}
-        <div className="p-6 flex flex-col justify-between space-y-4">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Automated Fetching Mode</h4>
-              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
-                <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                Live Listeners Enabled
-              </span>
-            </div>
-            
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              The autonomous <strong>Fetcher Bot</strong> runs continuous polls in the background, listening to synchronized applicant tracking pipelines (ATS), corporate recruiter inbox folders, and secure cloud storage buckets.
-            </p>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-2 text-[11px]">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-medium">ATS Webhook Status:</span>
-                <span className="font-bold text-emerald-600">CONNECTED</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-medium">Synced Recruiter Folders:</span>
-                <span className="font-bold text-slate-800">4 Directories</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-medium">Continuous Poll Cycle:</span>
-                <span className="font-mono text-slate-500">Every 60 seconds</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-2">
-            <button
-              onClick={triggerForceFetch}
-              disabled={isForceFetching || uploadingFiles.length > 0}
-              className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold tracking-wide transition shadow flex items-center justify-center gap-2 cursor-pointer ${
-                isForceFetching || uploadingFiles.length > 0
-                  ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
-                  : "bg-slate-900 text-white hover:bg-slate-800"
-              }`}
-            >
-              {isForceFetching ? (
-                <>
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  <span>Polling external repositories...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="h-3.5 w-3.5 fill-current" />
-                  <span>Force Fetch Resumes Now</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
       </div>
 
       {/* Upload Progress Bar (Simulated Uploading X of Y files...) */}

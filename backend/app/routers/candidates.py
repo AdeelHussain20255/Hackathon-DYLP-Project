@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 from datetime import date
 
 import pdfplumber
@@ -11,6 +12,12 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from .. import models, schemas
+from ..apify_scraper import (
+    run_rozee_scraper,
+    run_linkedin_serp_search,
+    normalize_rozee_to_candidate,
+    normalize_serp_to_candidate,
+)
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -52,6 +59,12 @@ produce a JSON object with these fields:
 - score: integer 0-100, how well this candidate matches the JD
 - summary: 2-sentence assessment
 - email: candidate's real email if found in CV, else a plausible one
+- gender: candidate's gender if evident from CV (Male/Female/null)
+- shift_preference: inferred from CV (Morning/Night/Remote/Hybrid/Any)
+- age: estimated age as integer if evident, else null
+- is_remote: boolean, does the candidate prefer remote work
+- skills: comma-separated key skills found in CV
+- experience_years: integer, total years of experience
 
 Job Description:
 {job_description}
@@ -84,7 +97,197 @@ Respond with ONLY valid JSON, no markdown, no explanation."""
         pass
 
     return {"name": "Unknown Candidate", "role": "Software Engineer", "score": 75,
-            "summary": "Automated scoring fallback - Mistral call failed.", "email": ""}
+            "summary": "Automated scoring fallback - Mistral call failed.", "email": "",
+            "gender": None, "shift_preference": "Any", "age": None,
+            "is_remote": None, "skills": "", "experience_years": None}
+
+
+
+
+def fix_scraped_name_with_mistral(raw_name: str, raw_data: str, jd_text: str) -> str:
+    if "Candidate - " not in raw_name and "@linkedin.com" not in raw_name:
+        return raw_name
+    try:
+        prompt = f"""Extract the real candidate name from this job board data.
+The raw title/name is: {raw_name}
+Raw data: {raw_data[:1500]}
+Job: {jd_text[:500]}
+Respond with ONLY a valid JSON: {{"name": "real full name"}}"""
+        resp = requests.post(
+            MISTRAL_URL,
+            headers={"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"},
+            json={"model": "mistral-small-latest", "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}},
+            timeout=30,
+        )
+        data = resp.json()["choices"][0]["message"]["content"].strip()
+        import re
+        m = re.search(r'\{[\s\S]*\}', data)
+        if m:
+            parsed = json.loads(m.group(0))
+            name = parsed.get("name", "").strip()
+            if name and len(name) > 3 and "Candidate" not in name:
+                return name
+    except Exception as e:
+        print(f"[fix_name] Error: {e}")
+    return raw_name
+
+
+def auto_pipeline_after_fetch(db: Session):
+    from .pipeline import run_pipeline
+    from ..schemas import PipelineRunCreate
+    try:
+        all_candidates = db.query(models.Candidate).order_by(models.Candidate.created_at.desc()).limit(50).all()
+        if all_candidates:
+            payload = PipelineRunCreate(job_title="Auto Pipeline", job_description="Automated pipeline after candidate fetch")
+            run_pipeline(payload, db)
+            print("[auto-pipeline] Pipeline completed for fetched candidates")
+    except Exception as e:
+        print(f"[auto-pipeline] Error: {e}")
+
+
+def auto_email_best_candidates(db: Session):
+    from ..email_service import send_screening_result, send_interview_invite
+    try:
+        results = db.query(models.PipelineResult).filter(models.PipelineResult.is_best_match == True).all()
+        for r in results:
+            if r.candidate_email and "@example.com" not in r.candidate_email and "@linkedin.com" not in r.candidate_email:
+                send_screening_result(
+                    r.candidate_name, r.candidate_email,
+                    r.screened_score or 0, r.final_verdict or "Consider", r.final_notes or ""
+                )
+                if r.final_verdict in ("Strongly Recommend", "Recommend"):
+                    send_interview_invite(r.candidate_name, r.candidate_email, r.role or "Position")
+    except Exception as e:
+        print(f"[auto-email] Error: {e}")
+
+
+@router.post("/fetch-from-boards", response_model=schemas.FetchResponse)
+def fetch_from_job_boards(payload: schemas.FetchRequest, db: Session = Depends(get_db)):
+    start_time = time.time()
+    all_candidates = []
+    platform_counts = {"Rozee.pk": 0}
+
+    keyword = payload.job_title or payload.job_description[:50]
+    filters = payload.filters
+
+    try:
+        rozee_items = run_rozee_scraper(keyword, filters.location, payload.max_results_per_source)
+        print(f"[fetch-from-boards] Rozee returned {len(rozee_items)} items")
+        if rozee_items:
+            for item in rozee_items:
+                cand = normalize_rozee_to_candidate(item, payload.job_description)
+                cand["name"] = fix_scraped_name_with_mistral(
+                    cand.get("name", ""), json.dumps(item), payload.job_description
+                )
+                email = cand.get("email", "")
+                if "candidate." in email or "@example" in email:
+                    cand["email"] = f"{cand['name'].lower().replace(' ', '.').replace('-','')}@professional.email"
+                all_candidates.append(cand)
+            platform_counts["Rozee.pk"] = len(rozee_items)
+    except Exception as e:
+        print(f"[fetch-from-boards] Rozee scraper error: {e}")
+
+    try:
+        serp_items = run_linkedin_serp_search(keyword, filters.location, payload.max_results_per_source)
+        print(f"[fetch-from-boards] SerpAPI LinkedIn returned {len(serp_items)} items")
+        if serp_items:
+            for item in serp_items:
+                cand = normalize_serp_to_candidate(item, payload.job_description)
+                all_candidates.append(cand)
+            platform_counts["LinkedIn (Google)"] = len(serp_items)
+    except Exception as e:
+        print(f"[fetch-from-boards] SerpAPI error: {e}")
+
+
+    scored_candidates = []
+    for cand in all_candidates:
+        cv_text = cand.get("cv_text", "")
+        if cv_text and MISTRAL_API_KEY:
+            try:
+                result = score_with_mistral(cv_text, payload.job_description)
+                cand["match_score"] = int(result.get("score", 50))
+                cand["summary"] = result.get("summary", cand.get("summary", ""))
+                name = result.get("name", "")
+                if name and len(name) > 3 and "Candidate" not in name:
+                    cand["name"] = name
+                cand["email"] = result.get("email", cand.get("email", ""))
+                if result.get("gender"):
+                    cand["gender"] = cand["gender"] or result["gender"]
+                if result.get("shift_preference"):
+                    cand["shift_preference"] = result.get("shift_preference", cand.get("shift_preference"))
+                if result.get("age"):
+                    cand["age"] = cand["age"] or result["age"]
+                if result.get("is_remote") is not None:
+                    cand["is_remote"] = result["is_remote"]
+                if result.get("skills"):
+                    cand["skills"] = result["skills"]
+                if result.get("experience_years"):
+                    cand["experience_years"] = cand["experience_years"] or result["experience_years"]
+            except Exception:
+                cand["match_score"] = 50
+        else:
+            cand["match_score"] = 50
+
+    filtered = []
+    for cand in all_candidates:
+        if filters.gender and cand.get("gender") and cand["gender"].lower() != filters.gender.lower():
+            continue
+        if filters.shift and cand.get("shift_preference") and cand["shift_preference"].lower() != filters.shift.lower():
+            continue
+        if filters.remote is not None and cand.get("is_remote") is not None and cand["is_remote"] != filters.remote:
+            continue
+        if filters.age_min and cand.get("age") and cand["age"] < filters.age_min:
+            continue
+        if filters.age_max and cand.get("age") and cand["age"] > filters.age_max:
+            continue
+        if filters.experience_min is not None and cand.get("experience_years") is not None and cand["experience_years"] < filters.experience_min:
+            continue
+        if filters.experience_max is not None and cand.get("experience_years") is not None and cand["experience_years"] > filters.experience_max:
+            continue
+        if filters.location and cand.get("location") and filters.location.lower() not in cand["location"].lower():
+            continue
+        filtered.append(cand)
+
+    saved_candidates = []
+    for cand in filtered:
+        candidate = models.Candidate(
+            name=cand.get("name", "Unknown")[:100],
+            email=cand.get("email", "unknown@example.com")[:200],
+            role=cand.get("role", "Professional")[:100],
+            department=cand.get("department", "Engineering")[:100],
+            applied_date=date.today().isoformat(),
+            match_score=cand.get("match_score"),
+            status=cand.get("status", "Screening"),
+            current_stage=cand.get("current_stage", "Awaiting Ranking"),
+            summary=cand.get("summary", "")[:1000] if cand.get("summary") else None,
+            cv_text=cand.get("cv_text"),
+            gender=cand.get("gender"),
+            shift_preference=cand.get("shift_preference"),
+            age=cand.get("age"),
+            source_platform=cand.get("source_platform"),
+            is_remote=cand.get("is_remote"),
+            location=cand.get("location"),
+            skills=cand.get("skills"),
+            experience_years=cand.get("experience_years"),
+            phone=cand.get("phone"),
+        )
+        db.add(candidate)
+        db.commit()
+        db.refresh(candidate)
+        saved_candidates.append(candidate)
+
+    if saved_candidates:
+        auto_pipeline_after_fetch(db)
+        auto_email_best_candidates(db)
+
+    elapsed = int((time.time() - start_time) * 1000)
+
+    return schemas.FetchResponse(
+        candidates=[schemas.FetchedCandidateOut.model_validate(c) for c in saved_candidates],
+        total_fetched=len(saved_candidates),
+        platform_breakdown=platform_counts,
+        fetch_time_ms=elapsed,
+    )
 
 
 @router.get("", response_model=list[schemas.CandidateOut])
@@ -125,6 +328,12 @@ async def upload_and_score(
         current_stage="Awaiting Ranking",
         summary=result.get("summary", ""),
         cv_text=cv_text,
+        gender=result.get("gender"),
+        shift_preference=result.get("shift_preference", "Any"),
+        age=result.get("age"),
+        is_remote=result.get("is_remote"),
+        skills=result.get("skills"),
+        experience_years=result.get("experience_years"),
     )
     db.add(candidate)
     db.commit()
@@ -154,6 +363,31 @@ def update_status(candidate_id: str, payload: schemas.CandidateStatusUpdate, db:
     return candidate
 
 
+@router.post("/deduplicate")
+def deduplicate_candidates(db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    result = db.execute(text("""
+        WITH ranked AS (
+            SELECT id, name,
+                ROW_NUMBER() OVER (PARTITION BY name ORDER BY match_score DESC NULLS LAST, created_at ASC) AS rn
+            FROM candidates
+        )
+        DELETE FROM candidates WHERE id IN (SELECT id FROM ranked WHERE rn > 1)
+        RETURNING id
+    """))
+    db.commit()
+    deleted = len(result.fetchall())
+    return {"ok": True, "deleted": deleted}
+
+
+@router.delete("/bulk")
+def delete_all_candidates(db: Session = Depends(get_db)):
+    count = db.query(models.Candidate).delete()
+    db.query(models.PipelineResult).delete()
+    db.commit()
+    return {"ok": True, "deleted": count}
+
+
 @router.delete("/{candidate_id}")
 def delete_candidate(candidate_id: str, db: Session = Depends(get_db)):
     candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
@@ -162,3 +396,64 @@ def delete_candidate(candidate_id: str, db: Session = Depends(get_db)):
     db.delete(candidate)
     db.commit()
     return {"ok": True}
+
+
+@router.post("/enrich")
+def enrich_candidates(db: Session = Depends(get_db)):
+    enriched = 0
+    candidates = db.query(models.Candidate).filter(
+        models.Candidate.cv_text.isnot(None),
+        models.Candidate.cv_text != "",
+        models.Candidate.gender.is_(None),
+    ).all()
+    for c in candidates:
+        try:
+            job_text = f"Review candidate profile for {c.role or 'Professional'} position"
+            result = score_with_mistral(c.cv_text, job_text)
+            if result.get("gender"):
+                c.gender = result["gender"]
+            if result.get("shift_preference"):
+                c.shift_preference = result["shift_preference"]
+            if result.get("age"):
+                c.age = result["age"]
+            if result.get("is_remote") is not None:
+                c.is_remote = result["is_remote"]
+            if result.get("skills"):
+                c.skills = result["skills"]
+            if result.get("experience_years"):
+                c.experience_years = result["experience_years"]
+            enriched += 1
+        except Exception:
+            continue
+    db.commit()
+    return {"ok": True, "enriched": enriched, "scanned": len(candidates)}
+
+
+@router.post("/{candidate_id}/screen", response_model=schemas.CandidateOut)
+def screen_candidate(candidate_id: str, payload: schemas.JobDescriptionCreate, db: Session = Depends(get_db)):
+    candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
+    if not candidate:
+        raise HTTPException(404, "Candidate not found")
+    cv_text = candidate.cv_text or ""
+    if not cv_text:
+        raise HTTPException(400, "No CV text available for this candidate")
+    result = score_with_mistral(cv_text, payload.text)
+    candidate.match_score = int(result.get("score", 75))
+    candidate.summary = result.get("summary", "")
+    candidate.current_stage = "Done"
+    candidate.status = "Screening"
+    if result.get("gender"):
+        candidate.gender = result["gender"]
+    if result.get("shift_preference"):
+        candidate.shift_preference = result["shift_preference"]
+    if result.get("age"):
+        candidate.age = result["age"]
+    if result.get("is_remote") is not None:
+        candidate.is_remote = result["is_remote"]
+    if result.get("skills"):
+        candidate.skills = result["skills"]
+    if result.get("experience_years"):
+        candidate.experience_years = result["experience_years"]
+    db.commit()
+    db.refresh(candidate)
+    return candidate

@@ -4,8 +4,9 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Header
-from jose import JWTError, jwk, jwt
-from jose.utils import base64url_decode
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -34,39 +35,13 @@ def create_token(user_id: str) -> str:
 
 def verify_google_token(id_token: str) -> dict:
     try:
-        resp = requests.get("https://www.googleapis.com/oauth2/v3/certs", timeout=10)
-        certs = resp.json()
-
-        headers = jwt.get_unverified_header(id_token)
-        kid = headers.get("kid")
-
-        key_data = None
-        for key in certs["keys"]:
-            if key["kid"] == kid:
-                key_data = key
-                break
-
-        if not key_data:
-            raise HTTPException(401, "No matching Google signing key found")
-
-        public_key = jwk.construct(key_data)
-
-        message, encoded_signature = id_token.rsplit(".", 1)
-        decoded_signature = base64url_decode(encoded_signature)
-
-        if not public_key.verify(message.encode("utf-8"), decoded_signature):
-            raise HTTPException(401, "Invalid Google token signature")
-
-        payload = jwt.get_unverified_claims(id_token)
-
-        if payload.get("aud") != GOOGLE_CLIENT_ID:
-            raise HTTPException(401, "Invalid Google token audience")
+        request = google_requests.Request()
+        payload = google_id_token.verify_oauth2_token(
+            id_token, request, GOOGLE_CLIENT_ID
+        )
 
         if payload.get("iss") not in ["accounts.google.com", "https://accounts.google.com"]:
             raise HTTPException(401, "Invalid Google token issuer")
-
-        if not payload.get("email_verified", False):
-            raise HTTPException(401, "Google email not verified")
 
         if not payload.get("email"):
             raise HTTPException(400, "Email not provided in Google token")
@@ -74,6 +49,8 @@ def verify_google_token(id_token: str) -> dict:
         return payload
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(401, f"Google token verification failed: {str(e)}")
     except Exception as e:
         raise HTTPException(401, f"Google token verification failed: {str(e)}")
 
