@@ -1,5 +1,5 @@
 [auth]
-allowed_redirect_urls = []
+allowed_redirect_urls = ["https://agentix.insforge.site", "https://6uvfcvui.insforge.site", "http://localhost:3000", "http://localhost:5173"]
 require_email_verification = true
 verify_email_method = "code"
 reset_password_method = "code"
@@ -31,4 +31,4 @@ retention_days = 0
 retention_days = 7
 
 [deployments]
-subdomain = "vita-ai"
+subdomain = "agentix"
