@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 
@@ -222,8 +223,8 @@ class PipelineRunOut(BaseModel):
     parsed_count: int
     screened_count: int
     ranked_count: int
-    created_at: str
-    completed_at: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
 
     class Config:
