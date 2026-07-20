@@ -20,6 +20,7 @@ interface AgentQueueProps {
   items: QueueItem[];
   onTriggerToast?: (message: string) => void;
   onAdvanceStage?: (candidateName: string) => void;
+  onPushToPipeline?: (candidateIds: string[]) => void;
   refreshQueue?: () => void;
 }
 
@@ -28,7 +29,7 @@ const plural = (count: number, singular: string, pluralForm?: string): string =>
   return `${count} ${word}`;
 };
 
-export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, refreshQueue }: AgentQueueProps) {
+export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, onPushToPipeline, refreshQueue }: AgentQueueProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showBulkDropdown, setShowBulkDropdown] = useState(false);
 
@@ -124,27 +125,41 @@ export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, refr
       return;
     }
 
-    selectedIds.forEach((id) => {
-      const item = items.find((i) => i.id === id);
-      if (item && onAdvanceStage) onAdvanceStage(item.candidateName);
-    });
-
-    if (refreshQueue) setTimeout(refreshQueue, 500);
-
-    if (onTriggerToast) {
-      onTriggerToast(`Manually dispatched ${plural(selectedIds.length, "candidate")} to the next pipeline agent node`);
+    if (onPushToPipeline) {
+      onPushToPipeline(selectedIds);
+      if (onTriggerToast) {
+        onTriggerToast(`Pushed ${plural(selectedIds.length, "candidate")} to the 4-agent AI pipeline`);
+      }
+    } else if (onAdvanceStage) {
+      selectedIds.forEach((id) => {
+        const item = items.find((i) => i.id === id);
+        if (item) onAdvanceStage(item.candidateName);
+      });
+      if (onTriggerToast) {
+        onTriggerToast(`Manually dispatched ${plural(selectedIds.length, "candidate")} to the next pipeline agent node`);
+      }
     }
+
+    if (refreshQueue) setTimeout(refreshQueue, 2000);
+
     setSelectedIds([]);
     setShowBulkDropdown(false);
   };
 
   const handleStepUpgradeSingle = (id: string) => {
-    const item = items.find((i) => i.id === id);
-    if (item && onAdvanceStage) onAdvanceStage(item.candidateName);
-    if (refreshQueue) setTimeout(refreshQueue, 500);
-    if (onTriggerToast) {
-      onTriggerToast("Manually transitioned candidate to next pipeline process");
+    if (onPushToPipeline) {
+      onPushToPipeline([id]);
+      if (onTriggerToast) {
+        onTriggerToast("Pushed candidate to the 4-agent AI pipeline");
+      }
+    } else if (onAdvanceStage) {
+      const item = items.find((i) => i.id === id);
+      if (item) onAdvanceStage(item.candidateName);
+      if (onTriggerToast) {
+        onTriggerToast("Manually transitioned candidate to next pipeline process");
+      }
     }
+    if (refreshQueue) setTimeout(refreshQueue, 2000);
   };
 
   return (

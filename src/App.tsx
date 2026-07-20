@@ -1125,6 +1125,20 @@ Required Skills:
                       const match = candidates.find(c => c.name === name);
                       if (match) advanceCandidateStage(match.id);
                     }}
+                    onPushToPipeline={async (ids) => {
+                      try {
+                        const desc = jobDescription.trim() || "Software Engineer - generic job posting requiring strong technical skills and team collaboration";
+                        await runPipelineAction({
+                          job_title: desc.split("\n")[0].slice(0, 60),
+                          job_description: desc,
+                          candidate_ids: ids,
+                        });
+                        showToast(`Pipeline triggered for ${ids.length} candidate(s)`);
+                        await useAppStore.getState().fetchQueue();
+                      } catch (e: any) {
+                        showToast(`Pipeline error: ${e.message || e}`);
+                      }
+                    }}
                     refreshQueue={fetchQueue}
                   />
                 </div>
