@@ -9,7 +9,8 @@ import {
   Send, 
   ChevronDown, 
   Sparkles,
-  HelpCircle
+  HelpCircle,
+  Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import type { QueueItem } from "../store/useAppStore";
@@ -21,15 +22,22 @@ interface AgentQueueProps {
   onTriggerToast?: (message: string) => void;
   onAdvanceStage?: (candidateName: string) => void;
   onPushToPipeline?: (candidateIds: string[]) => void;
+  onDeleteItem?: (candidateId: string) => void;
   refreshQueue?: () => void;
 }
+
+const getInitials = (name: string): string => {
+  const cleaned = name.replace(/[^\w\sA-Za-z]/g, " ").trim();
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map(p => p[0]?.toUpperCase() || "").join("");
+};
 
 const plural = (count: number, singular: string, pluralForm?: string): string => {
   const word = count === 1 ? singular : (pluralForm ?? `${singular}s`);
   return `${count} ${word}`;
 };
 
-export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, onPushToPipeline, refreshQueue }: AgentQueueProps) {
+export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, onPushToPipeline, onDeleteItem, refreshQueue }: AgentQueueProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showBulkDropdown, setShowBulkDropdown] = useState(false);
 
@@ -214,6 +222,21 @@ export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, onPu
                     <ArrowRight className="h-3.5 w-3.5 text-indigo-600" />
                     <span>Push to Next Agent</span>
                   </button>
+                  {onDeleteItem && (
+                    <button
+                      onClick={() => {
+                        selectedIds.forEach((id) => onDeleteItem(id));
+                        setSelectedIds([]);
+                        setShowBulkDropdown(false);
+                        if (onTriggerToast) onTriggerToast(`Removed ${selectedIds.length} item(s) from queue`);
+                        if (refreshQueue) setTimeout(refreshQueue, 1000);
+                      }}
+                      className="w-full text-left px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                      <span>Delete Selected</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setSelectedIds([]);
@@ -272,14 +295,14 @@ export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, onPu
 
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-50 border border-slate-200 text-slate-600 shadow-sm">
-                        <FileText className="h-4 w-4 text-slate-500" />
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 border border-indigo-200 font-bold text-indigo-700 text-xs shrink-0">
+                        {getInitials(item.candidateName)}
                       </div>
                       <div>
                         <div className="font-bold text-slate-900 group-hover:text-indigo-600 transition">
-                          {item.fileName}
+                          {item.candidateName}
                         </div>
-                        <div className="text-slate-400 text-[10px] mt-0.5">{item.candidateName} • {item.email}</div>
+                        <div className="text-slate-400 text-[10px] mt-0.5">{item.role || item.fileName} • {item.email}</div>
                       </div>
                     </div>
                   </td>
@@ -299,7 +322,7 @@ export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, onPu
                   </td>
 
                   <td className="px-6 py-4 text-center whitespace-nowrap">
-                    <div className="flex items-center justify-center gap-2">
+                    <div className="flex items-center justify-center gap-1.5">
                       {item.stage !== "Invite Sent" ? (
                         <button
                           onClick={() => handleStepUpgradeSingle(item.id)}
@@ -312,6 +335,21 @@ export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, onPu
                           <CheckCircle2 className="h-3.5 w-3.5" />
                           Done
                         </span>
+                      )}
+                      {onDeleteItem && (
+                        <button
+                          onClick={() => {
+                            if (confirm(`Remove ${item.candidateName} from queue?`)) {
+                              onDeleteItem(item.id);
+                              if (onTriggerToast) onTriggerToast(`Removed ${item.candidateName} from queue`);
+                              if (refreshQueue) setTimeout(refreshQueue, 1000);
+                            }
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition cursor-pointer"
+                          title="Remove from queue"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       )}
                     </div>
                   </td>

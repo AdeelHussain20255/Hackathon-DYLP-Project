@@ -1140,6 +1140,15 @@ Required Skills:
                         showToast(`Pipeline error: ${e.message || e}`);
                       }
                     }}
+                    onDeleteItem={async (id) => {
+                      try {
+                        await api.candidates.deleteSelected([id]);
+                        await useAppStore.getState().fetchCandidates();
+                        fetchQueue();
+                      } catch (e: any) {
+                        showToast(`Delete failed: ${e.message || e}`);
+                      }
+                    }}
                     refreshQueue={fetchQueue}
                   />
                 </div>
