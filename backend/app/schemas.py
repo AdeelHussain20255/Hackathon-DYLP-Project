@@ -258,5 +258,29 @@ class PipelineFullOut(BaseModel):
     results: list[PipelineResultOut]
 
 
+class CVAnalysisOut(BaseModel):
+    name: str
+    email: str
+    role: str
+    score: int
+    summary: str
+    skills: str
+    experience_years: Optional[int] = None
+    gender: Optional[str] = None
+    shift_preference: Optional[str] = None
+    is_remote: Optional[bool] = None
+    age: Optional[int] = None
+    location: Optional[str] = None
+    strengths: list[str] = []
+    areas_for_improvement: list[str] = []
+    detailed_assessment: str = ""
+    overall_verdict: str = ""
+
+
+class BatchAnalyzeResponse(BaseModel):
+    candidates: list[CVAnalysisOut]
+    total_processed: int
+
+
 class BulkDeleteRequest(BaseModel):
     ids: list[str]

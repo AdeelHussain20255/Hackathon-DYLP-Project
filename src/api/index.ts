@@ -185,6 +185,23 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ title: "JD", text: jobDescription }),
       }),
+    batchAnalyze: async (files: File[]) => {
+      const form = new FormData();
+      files.forEach((f) => form.append("files", f));
+      const token = getToken();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE}/api/candidates/batch-analyze`, {
+        method: "POST",
+        body: form,
+        headers,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Batch analyze API ${res.status}: ${text}`);
+      }
+      return res.json() as Promise<{ candidates: CVAnalysisDTO[]; total_processed: number }>;
+    },
   },
 
   agents: {
@@ -327,4 +344,23 @@ export interface PipelineResultDTO {
   final_verdict: string | null;
   final_notes: string | null;
   is_best_match: boolean;
+}
+
+export interface CVAnalysisDTO {
+  name: string;
+  email: string;
+  role: string;
+  score: number;
+  summary: string;
+  skills: string;
+  experience_years: number | null;
+  gender: string | null;
+  shift_preference: string | null;
+  is_remote: boolean | null;
+  age: number | null;
+  location: string | null;
+  strengths: string[];
+  areas_for_improvement: string[];
+  detailed_assessment: string;
+  overall_verdict: string;
 }

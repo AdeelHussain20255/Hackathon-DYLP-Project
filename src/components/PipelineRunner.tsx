@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   Bot,
   Sparkles,
@@ -11,7 +11,7 @@ import {
   Clock,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { PipelineRunDTO } from "../api";
+import { api, PipelineRunDTO } from "../api";
 
 interface PipelineRunnerProps {
   jobDescription: string;
@@ -41,6 +41,14 @@ export default function PipelineRunner({
   const [progress, setProgress] = useState(0);
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
   const [latestRunId, setLatestRunId] = useState<string | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
 
   const handleRun = async () => {
     if (!jobDescription.trim()) {
@@ -52,12 +60,8 @@ export default function PipelineRunner({
       return;
     }
     setIsRunning(true);
-    setProgress(0);
-    setCurrentAgent(null);
-
-    const interval = setInterval(() => {
-      setProgress((p) => Math.min(p + 2, 95));
-    }, 2000);
+    setProgress(5);
+    setCurrentAgent("Parser Agent");
 
     try {
       const result = await onRunPipeline({
@@ -65,16 +69,55 @@ export default function PipelineRunner({
         job_description: jobDescription,
         candidate_ids: candidateIds,
       });
-      clearInterval(interval);
-      setProgress(100);
-      setLatestRunId(result.run.id);
-      showToast(`Pipeline complete! ${result.results.length} candidates processed.`);
-      setTimeout(() => onSelectRun(result.run.id), 500);
+
+      const runId = result.run?.id || result.run_id;
+      if (!runId) {
+        showToast("Pipeline started but no run ID returned");
+        setIsRunning(false);
+        return;
+      }
+
+      setLatestRunId(runId);
+      showToast("Pipeline started in background — polling for completion...");
+
+      let attempts = 0;
+      const maxAttempts = 120;
+      pollingRef.current = setInterval(async () => {
+        attempts++;
+        try {
+          const status = await api.pipeline.getRun(runId);
+          const run = status.run;
+
+          setProgress(run.progress || 0);
+          setCurrentAgent(run.current_agent);
+
+          if (run.status === "completed") {
+            stopPolling();
+            setProgress(100);
+            setCurrentAgent(null);
+            setIsRunning(false);
+            showToast(`Pipeline complete! ${run.total_candidates} candidates processed.`);
+            setTimeout(() => onSelectRun(runId), 500);
+          } else if (run.status === "failed") {
+            stopPolling();
+            setIsRunning(false);
+            showToast(`Pipeline failed: ${run.error_message || "Unknown error"}`);
+          } else if (attempts >= maxAttempts) {
+            stopPolling();
+            setIsRunning(false);
+            showToast("Pipeline timed out — check status manually");
+          }
+        } catch (e: any) {
+          stopPolling();
+          setIsRunning(false);
+          showToast(`Pipeline polling error: ${e.message || e}`);
+        }
+      }, 3000);
     } catch (e: any) {
-      clearInterval(interval);
+      stopPolling();
+      setIsRunning(false);
       showToast(`Pipeline failed: ${e.message || e}`);
     }
-    setIsRunning(false);
   };
 
   return (
@@ -132,7 +175,7 @@ export default function PipelineRunner({
             <div className="flex items-center justify-between text-xs">
               <span className="text-indigo-600 font-semibold animate-pulse flex items-center gap-1.5">
                 <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                Running pipeline...
+                {currentAgent ? `Running ${currentAgent}...` : "Starting pipeline..."}
               </span>
               <span className="font-mono font-bold text-slate-700">{progress}%</span>
             </div>
@@ -154,7 +197,7 @@ export default function PipelineRunner({
           {isRunning ? (
             <>
               <RefreshCw className="h-4 w-4 animate-spin" />
-              Processing...
+              Processing ({progress}%)...
             </>
           ) : (
             <>

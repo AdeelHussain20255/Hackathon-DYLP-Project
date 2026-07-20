@@ -175,6 +175,98 @@ def auto_email_best_candidates(db: Session):
         print(f"[auto-email] Error: {e}")
 
 
+@router.post("/batch-analyze", response_model=schemas.BatchAnalyzeResponse)
+async def batch_analyze_cvs(
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+):
+    if len(files) > 5:
+        raise HTTPException(400, "Maximum 5 CV files allowed at once")
+    if not files:
+        raise HTTPException(400, "No files provided")
+
+    results = []
+    for file in files:
+        cv_text = extract_text(file)
+        if not cv_text:
+            results.append(schemas.CVAnalysisOut(
+                name=file.filename or "Unknown",
+                email="",
+                role="",
+                score=0,
+                summary="Unable to extract text from file",
+                skills="",
+                overall_verdict="Error: Unreadable file",
+            ))
+            continue
+
+        prompt = f"""You are a senior HR Tech AI — a world-class recruitment analyst.
+Analyze the following CV/resume in detail. Extract ALL useful information and provide a comprehensive candidate assessment.
+
+CV Text:
+{cv_text[:6000]}
+
+Respond with ONLY valid JSON in this exact structure:
+{{
+  "name": "candidate's real full name from CV",
+  "email": "candidate's email if found, else empty string",
+  "role": "the most fitting job title based on their experience",
+  "score": <integer 0-100 overall fit>,
+  "summary": "3-4 sentence professional summary of the candidate",
+  "skills": "comma-separated list of ALL technical and soft skills found",
+  "experience_years": <integer total years of experience, or null>,
+  "gender": "Male/Female/null",
+  "shift_preference": "Morning/Night/Remote/Hybrid/Any",
+  "is_remote": true/false/null,
+  "age": <integer estimated age or null>,
+  "location": "city, country or empty",
+  "strengths": ["list", "of", "top", "strengths"],
+  "areas_for_improvement": ["list", "of", "areas", "to", "improve"],
+  "detailed_assessment": "A comprehensive 5-7 sentence paragraph assessing this candidate: their background, key qualifications, what makes them unique, what roles they are best suited for, and any notable achievements.",
+  "overall_verdict": "Strong Hire / Hire / Consider / Not Recommended"
+}}"""
+
+        try:
+            response = requests.post(
+                MISTRAL_URL,
+                headers={"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": "mistral-small-latest",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_object"},
+                    "max_tokens": 3000,
+                },
+                timeout=(10, 30),
+            )
+            response.raise_for_status()
+            text = response.json()["choices"][0]["message"]["content"].strip()
+            match = re.search(r"\{[\s\S]*\}", text)
+            data = json.loads(match.group(0)) if match else {}
+        except Exception:
+            data = {}
+
+        results.append(schemas.CVAnalysisOut(
+            name=data.get("name", file.filename or "Unknown"),
+            email=data.get("email", ""),
+            role=data.get("role", "Professional"),
+            score=int(data.get("score", 50)),
+            summary=data.get("summary", ""),
+            skills=data.get("skills", ""),
+            experience_years=data.get("experience_years"),
+            gender=data.get("gender"),
+            shift_preference=data.get("shift_preference", "Any"),
+            is_remote=data.get("is_remote"),
+            age=data.get("age"),
+            location=data.get("location", ""),
+            strengths=data.get("strengths", []),
+            areas_for_improvement=data.get("areas_for_improvement", []),
+            detailed_assessment=data.get("detailed_assessment", ""),
+            overall_verdict=data.get("overall_verdict", "Consider"),
+        ))
+
+    return schemas.BatchAnalyzeResponse(candidates=results, total_processed=len(results))
+
+
 @router.post("/fetch-from-boards", response_model=schemas.FetchResponse)
 def fetch_from_job_boards(payload: schemas.FetchRequest, db: Session = Depends(get_db)):
     start_time = time.time()

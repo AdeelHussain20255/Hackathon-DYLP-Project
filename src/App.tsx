@@ -17,6 +17,7 @@ import LandingPage from "./components/LandingPage";
 import FetchFilters, { FiltersState } from "./components/FetchFilters";
 import PipelineRunner from "./components/PipelineRunner";
 import ResultsDashboard from "./components/ResultsDashboard";
+import CVAnalyzer from "./components/CVAnalyzer";
 import { CandidateDTO } from "./api";
 
 // Define TypeScript interfaces for our application state
@@ -1150,7 +1151,25 @@ Required Skills:
             {currentTab === "agents" && (
               <div id="agents-tab" className="space-y-6">
                 <AgentAnalytics mode="agents" bots={agents} onToggleBot={toggleAgent} onRunBot={async (id) => { try { const urls: Record<string, string> = { fetcher: "/api/agents/fetcher/run-now", parser: "/api/agents/parser/run-now", ranker: "/api/agents/ranker/run-now", scheduler: "/api/agents/scheduler/send-interviews" }; if (urls[id]) { await api.post(urls[id]); showToast(`${id.charAt(0).toUpperCase() + id.slice(1)} bot started`); } } catch (e: any) { showToast(`Bot error: ${e.message}`); } }} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
-                
+
+                {/* CV Analysis Studio */}
+                <CVAnalyzer
+                  onPipelineRun={async (ids) => {
+                    try {
+                      const desc = jobDescription.trim() || "Software Engineer - generic job posting requiring strong technical skills and team collaboration";
+                      await runPipelineAction({
+                        job_title: desc.split("\n")[0].slice(0, 60),
+                        job_description: desc,
+                        candidate_ids: ids,
+                      });
+                      showToast("CV analysis candidates sent to 4-agent pipeline");
+                    } catch (e: any) {
+                      showToast(`Pipeline error: ${e.message || e}`);
+                    }
+                  }}
+                  showToast={showToast}
+                />
+
                 {/* System Diagnostics */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
                   <div className="flex items-center justify-between">

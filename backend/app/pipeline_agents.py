@@ -2,11 +2,14 @@ import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
+MAX_WORKERS = 5
 
 
 def _call_mistral(prompt: str, response_format: dict | None = None) -> str:
@@ -17,21 +20,26 @@ def _call_mistral(prompt: str, response_format: dict | None = None) -> str:
     }
     if response_format:
         payload["response_format"] = response_format
-    try:
-        resp = requests.post(
-            MISTRAL_URL,
-            headers={
-                "Authorization": f"Bearer {MISTRAL_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=60,
-        )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print(f"[Mistral] Error: {e}")
-        return ""
+    resp = requests.post(
+        MISTRAL_URL,
+        headers={
+            "Authorization": f"Bearer {MISTRAL_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=(10, 25),
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, requests.HTTPError)),
+)
+def _call_mistral_safe(prompt: str, response_format: dict | None = None) -> str:
+    return _call_mistral(prompt, response_format)
 
 
 def _parse_json(text: str) -> dict:
@@ -69,8 +77,12 @@ Respond with ONLY valid JSON:
   "summary": "1-2 sentence summary"
 }}"""
 
-    raw = _call_mistral(prompt, {"type": "json_object"})
-    data = _parse_json(raw)
+    try:
+        raw = _call_mistral_safe(prompt, {"type": "json_object"})
+        data = _parse_json(raw)
+    except Exception:
+        data = {}
+
     return {
         "name": data.get("name", candidate.get("name", "Unknown")),
         "email": data.get("email", candidate.get("email", "")),
@@ -110,8 +122,12 @@ Respond with ONLY valid JSON:
   "verdict": "Strong Match / Moderate Match / Weak Match"
 }}"""
 
-    raw = _call_mistral(prompt, {"type": "json_object"})
-    data = _parse_json(raw)
+    try:
+        raw = _call_mistral_safe(prompt, {"type": "json_object"})
+        data = _parse_json(raw)
+    except Exception:
+        data = {}
+
     return {
         "screened_score": data.get("score", 50),
         "screened_summary": data.get("summary", ""),
@@ -150,10 +166,10 @@ Respond with ONLY valid JSON as an array:
 ]
 Order by best fit first."""
 
-    raw = _call_mistral(prompt)
-    array_match = re.search(r"\[[\s\S]*\]", raw)
-    if array_match:
-        try:
+    try:
+        raw = _call_mistral_safe(prompt)
+        array_match = re.search(r"\[[\s\S]*\]", raw)
+        if array_match:
             rankings = json.loads(array_match.group(0))
             for r in rankings:
                 idx = r.get("candidate_index", 0)
@@ -163,8 +179,8 @@ Order by best fit first."""
                         "rank_position": r.get("rank_position", 999),
                         "ranked_analysis": r.get("analysis", ""),
                     }
-        except json.JSONDecodeError:
-            pass
+    except Exception:
+        pass
 
     for i, c in enumerate(candidates_with_scores):
         if "ranked" not in c:
@@ -205,8 +221,11 @@ Respond with ONLY valid JSON:
   "final_notes": "detailed final recommendation",
   "next_steps": "suggested next steps"
 }}"""
-        raw = _call_mistral(prompt, {"type": "json_object"})
-        data = _parse_json(raw)
+        try:
+            raw = _call_mistral_safe(prompt, {"type": "json_object"})
+            data = _parse_json(raw)
+        except Exception:
+            data = {}
         best["final"] = {
             "final_verdict": data.get("verdict", "Recommend"),
             "final_notes": data.get("final_notes", ""),
@@ -221,3 +240,64 @@ Respond with ONLY valid JSON:
             }
 
     return candidates_ranked, (best if best else None)
+
+
+def run_pipeline_stage(cand_dict: dict, cand_id: str, job_description: str) -> dict:
+    parsed = agent_parse(cand_dict, job_description)
+    screened = agent_screen(cand_dict, parsed, job_description)
+    return {"candidate_id": cand_id, "candidate": cand_dict, "parsed": parsed, "screened": screened}
+
+
+def run_pipeline_parallel(candidates_map: dict, candidate_ids: list[str], job_description: str, progress_callback=None) -> list[dict]:
+    working_data = []
+    total = len(candidate_ids)
+
+    cand_list = []
+    for cid in candidate_ids:
+        c = candidates_map.get(cid)
+        if not c:
+            continue
+        cand_dict = {
+            "id": c.id,
+            "name": c.name,
+            "email": c.email,
+            "role": c.role,
+            "cv_text": c.cv_text or "",
+            "skills": c.skills or "",
+            "experience_years": c.experience_years,
+            "location": c.location or "",
+            "gender": c.gender,
+            "shift_preference": c.shift_preference,
+            "is_remote": c.is_remote,
+            "age": c.age,
+            "summary": c.summary or "",
+        }
+        cand_list.append((cand_dict, cid))
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(run_pipeline_stage, cd, cid, job_description): (i, cid)
+            for i, (cd, cid) in enumerate(cand_list)
+        }
+        for future in as_completed(futures):
+            i, cid = futures[future]
+            try:
+                result = future.result()
+                working_data.append(result)
+            except Exception as e:
+                working_data.append({
+                    "candidate_id": cid,
+                    "candidate": cand_list[i][0],
+                    "parsed": {"name": cand_list[i][0].get("name", "Unknown")},
+                    "screened": {"screened_score": 0},
+                })
+                print(f"[pipeline] Error processing candidate {cid}: {e}")
+            if progress_callback:
+                progress_callback(len([f for f in futures if f.done()]), total)
+
+    if progress_callback:
+        progress_callback(total, total)
+
+    working_data = agent_deep_rank(working_data, job_description)
+    working_data, best = agent_finalize(working_data, job_description)
+    return working_data

@@ -2,25 +2,120 @@ import json
 import os
 import io
 import csv
+import threading
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from .. import models, schemas
-from ..pipeline_agents import (
-    agent_parse,
-    agent_screen,
-    agent_deep_rank,
-    agent_finalize,
-)
+from ..pipeline_agents import run_pipeline_parallel
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
 
-@router.post("/run", response_model=schemas.PipelineFullOut)
+def _background_run_pipeline(run_id: str, candidate_ids: list[str], job_title: str, job_description: str):
+    db = SessionLocal()
+    try:
+        run = db.query(models.PipelineRun).filter(models.PipelineRun.id == run_id).first()
+        if not run:
+            return
+
+        candidates_map = {}
+        for cid in candidate_ids:
+            c = db.query(models.Candidate).filter(models.Candidate.id == cid).first()
+            if c:
+                candidates_map[cid] = c
+
+        total = len(candidate_ids)
+
+        def update_progress(done: int, total: int):
+            try:
+                r = db.query(models.PipelineRun).filter(models.PipelineRun.id == run_id).first()
+                if r:
+                    r.progress = min(10 + int(done / total * 55), 65)
+                    r.parsed_count = done
+                    r.screened_count = done
+                    r.current_agent = "Parser + Screener Agent"
+                    db.commit()
+            except Exception:
+                pass
+
+        working_data = run_pipeline_parallel(candidates_map, candidate_ids, job_description, progress_callback=update_progress)
+
+        run.current_agent = "Deep Ranker + Finalizer Agent"
+        run.progress = 70
+        db.commit()
+
+        db.query(models.PipelineResult).filter(models.PipelineResult.run_id == run.id).delete()
+        db.commit()
+
+        best = None
+        for wd in working_data:
+            if wd.get("candidate_id") and wd.get("candidate_id") == (working_data[0]["candidate_id"] if working_data else None):
+                best = wd
+
+        for idx, wd in enumerate(working_data):
+            p = wd.get("parsed", {})
+            s = wd.get("screened", {})
+            r = wd.get("ranked", {})
+            f = wd.get("final", {})
+            skills_list = p.get("skills", [])
+            skills_str = ", ".join(skills_list) if isinstance(skills_list, list) else str(skills_list)
+
+            is_best = False
+            if best and wd["candidate_id"] == best.get("candidate_id"):
+                is_best = True
+
+            result = models.PipelineResult(
+                run_id=run.id,
+                candidate_id=wd["candidate_id"],
+                candidate_name=p.get("name", wd["candidate"].get("name", "Unknown")),
+                candidate_email=p.get("email", wd["candidate"].get("email", "")),
+                role=p.get("role", wd["candidate"].get("role", "")),
+                parsed_skills=skills_str,
+                parsed_experience=p.get("experience_years"),
+                parsed_location=p.get("location", ""),
+                screened_score=s.get("screened_score"),
+                screened_summary=s.get("screened_summary", ""),
+                
+                ranked_score=r.get("ranked_score"),
+                ranked_analysis=r.get("ranked_analysis", ""),
+                rank_position=r.get("rank_position", idx + 1),
+                final_verdict=f.get("final_verdict", "Consider"),
+                final_notes=f.get("final_notes", ""),
+                is_best_match=is_best,
+            )
+            db.add(result)
+
+            orig = candidates_map.get(wd["candidate_id"])
+            if orig:
+                orig.match_score = r.get("ranked_score") or s.get("screened_score") or orig.match_score
+                orig.current_stage = "Done"
+                orig.summary = s.get("screened_summary", orig.summary)
+
+        run.status = "completed"
+        run.progress = 100
+        run.current_agent = None
+        run.completed_at = datetime.now(timezone.utc)
+        db.commit()
+
+    except Exception as e:
+        try:
+            run = db.query(models.PipelineRun).filter(models.PipelineRun.id == run_id).first()
+            if run:
+                run.status = "failed"
+                run.error_message = str(e)[:500]
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+@router.post("/run")
 def run_pipeline(payload: schemas.PipelineRunCreate, db: Session = Depends(get_db)):
     job_title = payload.job_title or "Software Engineer"
     job_description = payload.job_description or ""
@@ -43,125 +138,17 @@ def run_pipeline(payload: schemas.PipelineRunCreate, db: Session = Depends(get_d
     db.commit()
     db.refresh(run)
 
-    candidates_map = {}
-    for cid in candidate_ids:
-        c = db.query(models.Candidate).filter(models.Candidate.id == cid).first()
-        if c:
-            candidates_map[cid] = c
+    threading.Thread(
+        target=_background_run_pipeline,
+        args=(run.id, candidate_ids, job_title, job_description),
+        daemon=True,
+    ).start()
 
-    working_data = []
-
-    try:
-        run.current_agent = "Parser Agent"
-        run.progress = 10
-        db.commit()
-
-        for idx, cid in enumerate(candidate_ids):
-            c = candidates_map.get(cid)
-            if not c:
-                continue
-            cand_dict = {
-                "id": c.id,
-                "name": c.name,
-                "email": c.email,
-                "role": c.role,
-                "cv_text": c.cv_text or "",
-                "skills": c.skills or "",
-                "experience_years": c.experience_years,
-                "location": c.location or "",
-                "gender": c.gender,
-                "shift_preference": c.shift_preference,
-                "is_remote": c.is_remote,
-                "age": c.age,
-                "summary": c.summary or "",
-            }
-            parsed = agent_parse(cand_dict, job_description)
-            working_data.append({"candidate_id": cid, "candidate": cand_dict, "parsed": parsed})
-            run.parsed_count = idx + 1
-            run.progress = 10 + int((idx + 1) / len(candidate_ids) * 20)
-            db.commit()
-
-        run.current_agent = "Screener Agent"
-        run.progress = 35
-        db.commit()
-
-        for idx, wd in enumerate(working_data):
-            screened = agent_screen(wd["candidate"], wd["parsed"], job_description)
-            wd["screened"] = screened
-            run.screened_count = idx + 1
-            run.progress = 35 + int((idx + 1) / len(working_data) * 25)
-            db.commit()
-
-        run.current_agent = "Deep Ranker Agent"
-        run.progress = 65
-        db.commit()
-
-        working_data = agent_deep_rank(working_data, job_description)
-        run.ranked_count = len(working_data)
-        run.progress = 75
-        db.commit()
-
-        run.current_agent = "Finalizer Agent"
-        run.progress = 85
-        db.commit()
-
-        working_data, best = agent_finalize(working_data, job_description)
-
-        db.query(models.PipelineResult).filter(models.PipelineResult.run_id == run.id).delete()
-        db.commit()
-
-        for idx, wd in enumerate(working_data):
-            p = wd.get("parsed", {})
-            s = wd.get("screened", {})
-            r = wd.get("ranked", {})
-            f = wd.get("final", {})
-            skills_list = p.get("skills", [])
-            skills_str = ", ".join(skills_list) if isinstance(skills_list, list) else str(skills_list)
-
-            result = models.PipelineResult(
-                run_id=run.id,
-                candidate_id=wd["candidate_id"],
-                candidate_name=p.get("name", wd["candidate"].get("name", "Unknown")),
-                candidate_email=p.get("email", wd["candidate"].get("email", "")),
-                role=p.get("role", wd["candidate"].get("role", "")),
-                parsed_skills=skills_str,
-                parsed_experience=p.get("experience_years"),
-                parsed_location=p.get("location", ""),
-                screened_score=s.get("screened_score"),
-                screened_summary=s.get("screened_summary", ""),
-                ranked_score=r.get("ranked_score"),
-                ranked_analysis=r.get("ranked_analysis", ""),
-                rank_position=r.get("rank_position", idx + 1),
-                final_verdict=f.get("final_verdict", "Consider"),
-                final_notes=f.get("final_notes", ""),
-                is_best_match=(best is not None and wd["candidate_id"] == best["candidate_id"]),
-            )
-            db.add(result)
-
-            orig = candidates_map.get(wd["candidate_id"])
-            if orig:
-                orig.match_score = r.get("ranked_score") or s.get("screened_score") or orig.match_score
-                orig.current_stage = "Done"
-                orig.summary = s.get("screened_summary", orig.summary)
-
-        run.status = "completed"
-        run.progress = 100
-        run.current_agent = None
-        run.completed_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(run)
-
-    except Exception as e:
-        run.status = "failed"
-        run.error_message = str(e)[:500]
-        db.commit()
-        db.refresh(run)
-
-    results = db.query(models.PipelineResult).filter(models.PipelineResult.run_id == run.id).order_by(models.PipelineResult.rank_position).all()
-    return schemas.PipelineFullOut(
-        run=schemas.PipelineRunOut.model_validate(run),
-        results=[schemas.PipelineResultOut.model_validate(r) for r in results],
-    )
+    return {
+        "run": schemas.PipelineRunOut.model_validate(run),
+        "results": [],
+        "message": "Pipeline started in background. Poll GET /api/pipeline/runs/{id} for status.",
+    }
 
 
 @router.get("/runs", response_model=list[schemas.PipelineRunOut])
