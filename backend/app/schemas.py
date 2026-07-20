@@ -256,3 +256,7 @@ class PipelineResultOut(BaseModel):
 class PipelineFullOut(BaseModel):
     run: PipelineRunOut
     results: list[PipelineResultOut]
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[str]

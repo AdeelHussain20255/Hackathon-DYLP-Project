@@ -2,11 +2,18 @@ const API_BASE =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? "" : "https://agentix-hr-api-bdf4c6a4-c75e-4067-87b5-e0d3b29e3c91.fly.dev");
 
+let _accessToken: string | null = null;
+
+export function setAccessToken(token: string | null) {
+  _accessToken = token;
+}
+
 function getToken(): string | null {
-  return localStorage.getItem("auth_token");
+  return _accessToken || localStorage.getItem("auth_token");
 }
 
 function setToken(token: string | null) {
+  _accessToken = token;
   if (token) localStorage.setItem("auth_token", token);
   else localStorage.removeItem("auth_token");
 }
@@ -148,6 +155,11 @@ export const api = {
       }),
     deleteAll: () =>
       request<{ ok: boolean; deleted: number }>("/api/candidates/bulk", { method: "DELETE" }),
+    deleteSelected: (ids: string[]) =>
+      request<{ ok: boolean; deleted: number }>("/api/candidates/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
     enrichAll: () =>
       request<{ ok: boolean; enriched: number; scanned: number }>("/api/candidates/enrich", { method: "POST" }),
     upload: async (file: File, jobDescription: string) => {

@@ -22,6 +22,20 @@ from ..apify_scraper import (
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+
+
+def clean_name(raw: str) -> str:
+    import re
+    name = raw.strip()
+    cleaned = re.sub(r'[^A-Za-z \-.\']', '', name).strip()
+    if len(cleaned) < 2:
+        words = re.findall(r'[A-Za-z]+', name)
+        return words[0].capitalize() if words else "Unknown"
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    if cleaned.count(' ') > 3:
+        parts = cleaned.split()
+        cleaned = ' '.join(parts[:3])
+    return cleaned.strip()[:100] or "Unknown"
 MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 
 
@@ -176,9 +190,9 @@ def fetch_from_job_boards(payload: schemas.FetchRequest, db: Session = Depends(g
         if rozee_items:
             for item in rozee_items:
                 cand = normalize_rozee_to_candidate(item, payload.job_description)
-                cand["name"] = fix_scraped_name_with_mistral(
+                cand["name"] = clean_name(fix_scraped_name_with_mistral(
                     cand.get("name", ""), json.dumps(item), payload.job_description
-                )
+                ))
                 email = cand.get("email", "")
                 if "candidate." in email or "@example" in email:
                     cand["email"] = f"{cand['name'].lower().replace(' ', '.').replace('-','')}@professional.email"
@@ -209,7 +223,7 @@ def fetch_from_job_boards(payload: schemas.FetchRequest, db: Session = Depends(g
                 cand["summary"] = result.get("summary", cand.get("summary", ""))
                 name = result.get("name", "")
                 if name and len(name) > 3 and "Candidate" not in name:
-                    cand["name"] = name
+                    cand["name"] = clean_name(name)
                 cand["email"] = result.get("email", cand.get("email", ""))
                 if result.get("gender"):
                     cand["gender"] = cand["gender"] or result["gender"]
@@ -318,7 +332,7 @@ async def upload_and_score(
     result = score_with_mistral(cv_text, job_description)
 
     candidate = models.Candidate(
-        name=result.get("name", "Unknown"),
+        name=clean_name(result.get("name", "Unknown")),
         email=result.get("email") or "unknown@example.com",
         role=result.get("role", "Software Engineer"),
         department="Engineering",
@@ -377,6 +391,16 @@ def deduplicate_candidates(db: Session = Depends(get_db)):
     """))
     db.commit()
     deleted = len(result.fetchall())
+    return {"ok": True, "deleted": deleted}
+
+
+@router.post("/bulk-delete")
+def delete_selected_candidates(payload: schemas.BulkDeleteRequest, db: Session = Depends(get_db)):
+    if not payload.ids:
+        return {"ok": True, "deleted": 0}
+    deleted = db.query(models.Candidate).filter(models.Candidate.id.in_(payload.ids)).delete(synchronize_session=False)
+    db.query(models.PipelineResult).filter(models.PipelineResult.candidate_id.in_(payload.ids)).delete(synchronize_session=False)
+    db.commit()
     return {"ok": True, "deleted": deleted}
 
 

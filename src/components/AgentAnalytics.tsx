@@ -176,8 +176,8 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, onR
                       </span>
                     </div>
 
-                    {/* Run Now button for fetcher + scheduler bots */}
-                    {(bot.id === "fetcher" || bot.id === "scheduler") && onRunBot && (
+                    {/* Run Now button for all bots */}
+                    {onRunBot && (
                       <button
                         onClick={() => onRunBot(bot.id)}
                         className="mt-1 inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition"
@@ -220,10 +220,12 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, onR
             <div className="space-y-1.5">
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Average Match Score</span>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-extrabold text-slate-900 tracking-tight">{avgMatchScore}%</span>
+                <span className="text-3xl font-extrabold text-slate-900 tracking-tight">{totalCvs > 0 ? `${avgMatchScore}%` : '-'}</span>
+                {totalCvs > 0 && (
                 <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                  Optimal
+                  Active
                 </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-500">Benchmark score computed against matching criteria.</p>
             </div>
@@ -237,12 +239,14 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, onR
             <div className="space-y-1.5">
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Processing Time / CV</span>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-extrabold text-slate-900 tracking-tight">{processingTime} ms</span>
+                <span className="text-3xl font-extrabold text-slate-900 tracking-tight">{totalCvs > 0 ? `${processingTime} ms` : '-'}</span>
+                {totalCvs > 0 && (
                 <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                  Fast
+                  Active
                 </span>
+                )}
               </div>
-              <p className="text-[11px] text-slate-500">Average parsing and Gemini scoring latency.</p>
+              <p className="text-[11px] text-slate-500">Average Mistral AI scoring latency per candidate.</p>
             </div>
             <div className="h-12 w-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
               <Clock className="h-5.5 w-5.5 text-emerald-500" />
@@ -271,43 +275,50 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, onR
           </div>
 
           <div className="h-72 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={skillMatchData}
-                margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="name" 
-                  tick={{ fill: '#64748b', fontSize: 10 }}
-                  axisLine={{ stroke: '#cbd5e1' }}
-                  tickLine={false}
-                />
-                <YAxis 
-                  tick={{ fill: '#64748b', fontSize: 10 }}
-                  axisLine={{ stroke: '#cbd5e1' }}
-                  tickLine={false}
-                  unit="%"
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: '#1e293b', 
-                    borderRadius: '8px', 
-                    border: 'none',
-                    color: '#fff',
-                    fontSize: '11px',
-                    fontFamily: 'sans-serif'
-                  }}
-                  itemStyle={{ color: '#fff' }}
-                  labelStyle={{ fontWeight: 'bold', color: '#94a3b8' }}
-                />
-                <Bar dataKey="Count" fill="#4f46e5" radius={[4, 4, 0, 0]}>
-                  {skillMatchData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {skillMatchData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={skillMatchData}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="name" 
+                    tick={{ fill: '#64748b', fontSize: 10 }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                    tickLine={false}
+                  />
+                  <YAxis 
+                    tick={{ fill: '#64748b', fontSize: 10 }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                    tickLine={false}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: '#1e293b', 
+                      borderRadius: '8px', 
+                      border: 'none',
+                      color: '#fff',
+                      fontSize: '11px',
+                      fontFamily: 'sans-serif'
+                    }}
+                    itemStyle={{ color: '#fff' }}
+                    labelStyle={{ fontWeight: 'bold', color: '#94a3b8' }}
+                  />
+                  <Bar dataKey="Count" fill="#4f46e5" radius={[4, 4, 0, 0]}>
+                    {skillMatchData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-slate-400">
+                <Activity className="h-8 w-8 mb-2 text-slate-300" />
+                <p className="text-xs font-semibold">No Data Yet</p>
+                <p className="text-[10px] mt-0.5">Run the AI pipeline to see skill distribution</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -326,33 +337,41 @@ export default function AgentAnalytics({ mode = "agents", bots, onToggleBot, onR
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
             {/* Chart Area */}
             <div className="sm:col-span-7 h-60 w-full flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pipelineStatusData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={80}
-                    paddingAngle={4}
-                    dataKey="value"
-                  >
-                    {pipelineStatusData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#1e293b', 
-                      borderRadius: '8px', 
-                      border: 'none',
-                      color: '#fff',
-                      fontSize: '11px',
-                      fontFamily: 'sans-serif'
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              {pipelineStatusData.some(d => d.value > 0) ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pipelineStatusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={80}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {pipelineStatusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#1e293b', 
+                        borderRadius: '8px', 
+                        border: 'none',
+                        color: '#fff',
+                        fontSize: '11px',
+                        fontFamily: 'sans-serif'
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex flex-col items-center justify-center text-slate-400">
+                  <Activity className="h-8 w-8 mb-2 text-slate-300" />
+                  <p className="text-xs font-semibold">No Candidates Yet</p>
+                  <p className="text-[10px] mt-0.5">Upload or fetch candidates to see pipeline status</p>
+                </div>
+              )}
             </div>
 
             {/* Legend / Metrics Area */}

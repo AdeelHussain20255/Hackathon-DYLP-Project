@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useAppStore, CandidateStatus, QueueStage } from "./store/useAppStore";
+import { useAuthStore } from "./store/useAuthStore";
 import { api } from "./api";
-import { GoogleOAuthProvider } from "@react-oauth/google";
 import { 
   Bot, Sparkles, Search, Plus, Filter, CheckCircle2, 
   FileText, Sliders, Eye, RefreshCw, 
@@ -77,24 +77,16 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState("landing");
 
   // Authentication State
-  const [user, setUser] = useState<{
-    name: string;
-    email: string;
-    role: string;
-    avatarUrl: string;
-  } | null>(null);
+  const user = useAuthStore((s) => s.user);
+  const authLoading = useAuthStore((s) => s.loading);
+  const hydrateAuth = useAuthStore((s) => s.hydrate);
+  const signOutAction = useAuthStore((s) => s.signOut);
+  const setUser = useAuthStore((s) => s.setUser);
 
   const [showAuth, setShowAuth] = useState(false);
 
   useEffect(() => {
-    const token = api.auth.getToken();
-    if (token) {
-      api.auth.me().then((u) => {
-        setUser({ name: u.name, email: u.email, role: u.role, avatarUrl: u.avatar_url || "" });
-      }).catch(() => {
-        api.auth.logout();
-      });
-    }
+    hydrateAuth();
   }, []);
 
   // Notifications State
@@ -165,6 +157,7 @@ export default function App() {
   // Search & Filter state for candidates tab
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Modals & Drawers States
   const [isAddCandidateOpen, setIsAddCandidateOpen] = useState(false);
@@ -456,11 +449,7 @@ Required Skills:
           name, Count: count,
           color: config.skillMatchData.find(s => s.name.toLowerCase() === name.toLowerCase())?.color || "#6366f1",
         }))
-      : config.skillMatchData.map(skill => ({
-          name: skill.name,
-          Count: Math.max(1, Math.floor(stats.totalCandidates * skill.weight)),
-          color: skill.color,
-        }));
+      : [];
 
     // Pipeline status doughnut: aggregate live candidate counts + apply config colors
     const candidatesByStatus = candidates.reduce((acc, cand) => {
@@ -603,21 +592,17 @@ Required Skills:
     setShowAuth(true);
   };
 
-  const handleSignOut = () => {
-    api.auth.logout();
-    setUser(null);
+  const handleSignOut = async () => {
+    await signOutAction();
     showToast("Logged out successfully.");
   };
 
-  const handleAuthSuccess = (u: { name: string; email: string; role: string; avatarUrl: string }) => {
-    setUser(u);
-    showToast(`Welcome, ${u.name}!`);
+  const handleAuthSuccess = () => {
+    const u = useAuthStore.getState().user;
+    if (u) showToast(`Welcome, ${u.name}!`);
   };
 
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
-
   return (
-    <GoogleOAuthProvider clientId={googleClientId}>
     <div className="min-h-screen w-full overflow-x-hidden bg-slate-50 text-slate-900 font-sans antialiased flex flex-col">
       {/* Navbar Integration - always rendered, full width */}
       <Navbar 
@@ -633,7 +618,7 @@ Required Skills:
 
       {/* Landing Page - full width, no sidebar */}
       {currentTab === "landing" ? (
-        <LandingPage onLaunchDashboard={() => setCurrentTab("dashboard")} />
+        <LandingPage onLaunchDashboard={() => { if (user) { setCurrentTab("dashboard"); } else { setShowAuth(true); } }} />
       ) : (
         <div className="flex flex-1 overflow-hidden relative">
           {/* Mobile Sidebar Overlay */}
@@ -1150,7 +1135,7 @@ Required Skills:
             {/* ----------------- TAB: AI AGENTS ----------------- */}
             {currentTab === "agents" && (
               <div id="agents-tab" className="space-y-6">
-                <AgentAnalytics mode="agents" bots={agents} onToggleBot={toggleAgent} onRunBot={async (id) => { try { if (id === "fetcher") { await api.post("/api/agents/fetcher/run-now"); showToast("Fetcher bot started"); } else if (id === "scheduler") { await api.post("/api/agents/scheduler/send-interviews"); showToast("Scheduler bot started"); } } catch (e: any) { showToast(`Bot error: ${e.message}`); } }} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
+                <AgentAnalytics mode="agents" bots={agents} onToggleBot={toggleAgent} onRunBot={async (id) => { try { const urls: Record<string, string> = { fetcher: "/api/agents/fetcher/run-now", parser: "/api/agents/parser/run-now", ranker: "/api/agents/ranker/run-now", scheduler: "/api/agents/scheduler/send-interviews" }; if (urls[id]) { await api.post(urls[id]); showToast(`${id.charAt(0).toUpperCase() + id.slice(1)} bot started`); } } catch (e: any) { showToast(`Bot error: ${e.message}`); } }} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
                 
                 {/* System Diagnostics */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
@@ -1220,12 +1205,33 @@ Required Skills:
                       <Sparkles className="h-4 w-4" />
                       <span>Enrich All</span>
                     </button>
+                    {selectedIds.size > 0 && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Delete ${selectedIds.size} selected candidates?`)) return;
+                          try {
+                            await api.candidates.deleteSelected(Array.from(selectedIds));
+                            showToast(`Deleted ${selectedIds.size} candidates`);
+                            setSelectedIds(new Set());
+                            await useAppStore.getState().fetchCandidates();
+                          } catch (e: any) {
+                            showToast(`Delete failed: ${e.message || e}`);
+                          }
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition focus:outline-none"
+                        id="delete-selected-btn"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span>Delete Selected ({selectedIds.size})</span>
+                      </button>
+                    )}
                     {candidates.length > 0 && (
                       <button
                         onClick={async () => {
                           if (!confirm(`Delete all ${candidates.length} candidates and results? This cannot be undone.`)) return;
                           try {
                             await api.candidates.deleteAll();
+                            setSelectedIds(new Set());
                             showToast(`Deleted all ${candidates.length} candidates`);
                             await useAppStore.getState().fetchCandidates();
                           } catch (e: any) {
@@ -1279,6 +1285,20 @@ Required Skills:
                   <table className="min-w-full divide-y divide-slate-100 text-left">
                       <thead className="bg-slate-50/70 font-sans text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                         <tr>
+                          <th className="px-3 py-3.5 w-8">
+                            <input
+                              type="checkbox"
+                              checked={filteredCandidates.length > 0 && selectedIds.size === filteredCandidates.length}
+                              onChange={() => {
+                                if (selectedIds.size === filteredCandidates.length) {
+                                  setSelectedIds(new Set());
+                                } else {
+                                  setSelectedIds(new Set(filteredCandidates.map(c => c.id)));
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                          </th>
                           <th className="px-6 py-3.5">Candidate Details</th>
                           <th className="px-6 py-3.5">Role / Dept</th>
                           <th className="px-4 py-3.5 text-center">AI Score</th>
@@ -1296,6 +1316,19 @@ Required Skills:
                         {filteredCandidates.length > 0 ? (
                           filteredCandidates.map((cand) => (
                             <tr key={cand.id} className="hover:bg-slate-50/50 transition">
+                              <td className="whitespace-nowrap px-3 py-4.5">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(cand.id)}
+                                  onChange={() => {
+                                    const next = new Set(selectedIds);
+                                    if (next.has(cand.id)) next.delete(cand.id);
+                                    else next.add(cand.id);
+                                    setSelectedIds(next);
+                                  }}
+                                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                />
+                              </td>
                               <td className="whitespace-nowrap px-6 py-4.5">
                                 <div className="flex items-center gap-3">
                                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 border border-slate-200 font-bold text-slate-800">
@@ -1413,7 +1446,7 @@ Required Skills:
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={11} className="px-6 py-8 md:py-12 text-center text-slate-500">
+                            <td colSpan={12} className="px-6 py-8 md:py-12 text-center text-slate-500">
                               <div className="flex flex-col items-center justify-center">
                                 <Search className="h-8 w-8 text-slate-300 mb-2" />
                                 <p className="text-sm font-semibold text-slate-700">No candidates found</p>
@@ -1434,7 +1467,7 @@ Required Skills:
                 <div className="border-b border-slate-200 pb-5">
                   <h2 className="text-xl font-bold text-slate-900">Analytics & Insights</h2>
                 </div>
-                <AgentAnalytics mode="analytics" bots={agents} onToggleBot={toggleAgent} onRunBot={async (id) => { try { if (id === "fetcher") { await api.post("/api/agents/fetcher/run-now"); showToast("Fetcher bot started"); } else if (id === "scheduler") { await api.post("/api/agents/scheduler/send-interviews"); showToast("Scheduler bot started"); } } catch (e: any) { showToast(`Bot error: ${e.message}`); } }} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
+                <AgentAnalytics mode="analytics" bots={agents} onToggleBot={toggleAgent} onRunBot={async (id) => { try { const urls: Record<string, string> = { fetcher: "/api/agents/fetcher/run-now", parser: "/api/agents/parser/run-now", ranker: "/api/agents/ranker/run-now", scheduler: "/api/agents/scheduler/send-interviews" }; if (urls[id]) { await api.post(urls[id]); showToast(`${id.charAt(0).toUpperCase() + id.slice(1)} bot started`); } } catch (e: any) { showToast(`Bot error: ${e.message}`); } }} candidates={candidates} processingTimeMs={config.processingTimeMs} cvProcessedTrend={config.cvProcessedTrend} chartData={chartData} />
               </div>
             )}
 
@@ -1771,7 +1804,7 @@ Required Skills:
 
       {/* Auth Modal */}
       {showAuth && (
-        <AuthModal onClose={() => setShowAuth(false)} onAuth={handleAuthSuccess} />
+        <AuthModal onClose={() => { setShowAuth(false); handleAuthSuccess(); }} />
       )}
 
       {/* Floating Global Micro Notification System */}
@@ -1798,6 +1831,5 @@ Required Skills:
         )}
       </AnimatePresence>
     </div>
-    </GoogleOAuthProvider>
   );
 }

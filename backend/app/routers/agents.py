@@ -1,4 +1,5 @@
 import os
+import json
 import threading
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
@@ -36,6 +37,10 @@ def toggle_agent(agent_id: str, payload: schemas.AgentToggle, db: Session = Depe
     if payload.is_running:
         if agent_id == "fetcher":
             threading.Thread(target=_run_fetcher_bot, args=(db,), daemon=True).start()
+        elif agent_id == "parser":
+            threading.Thread(target=_run_parser_bot, args=(db,), daemon=True).start()
+        elif agent_id == "ranker":
+            threading.Thread(target=_run_ranker_bot, args=(db,), daemon=True).start()
         elif agent_id == "scheduler":
             threading.Thread(target=_run_scheduler_bot, args=(db,), daemon=True).start()
 
@@ -63,6 +68,15 @@ def trigger_fetcher_bot(db: Session = Depends(get_db)):
     threading.Thread(target=_run_fetcher_bot, args=(db,), daemon=True).start()
     return {"ok": True, "message": "Fetcher bot started in background"}
 
+@router.post("/parser/run-now")
+def trigger_parser_bot(db: Session = Depends(get_db)):
+    threading.Thread(target=_run_parser_bot, args=(db,), daemon=True).start()
+    return {"ok": True, "message": "Parser bot started in background"}
+
+@router.post("/ranker/run-now")
+def trigger_ranker_bot(db: Session = Depends(get_db)):
+    threading.Thread(target=_run_ranker_bot, args=(db,), daemon=True).start()
+    return {"ok": True, "message": "Ranker bot started in background"}
 
 @router.post("/scheduler/send-interviews")
 def trigger_scheduler_bot(db: Session = Depends(get_db)):
@@ -155,6 +169,106 @@ def _run_fetcher_bot(db: Session):
 
     except Exception as e:
         print(f"[fetcher-bot] Fatal error: {e}")
+
+
+def _run_parser_bot(db: Session):
+    try:
+        print("[parser-bot] Starting parse cycle...")
+        candidates = db.query(models.Candidate).filter(
+            models.Candidate.cv_text.isnot(None),
+            models.Candidate.cv_text != "",
+            models.Candidate.skills.is_(None),
+        ).all()
+
+        parsed_count = 0
+        for c in candidates:
+            try:
+                from ..pipeline_agents import agent_parse
+                parsed = agent_parse({"cv_text": c.cv_text, "name": c.name}, f"Parse candidate for {c.role or 'Professional'} role")
+                if parsed.get("skills"):
+                    c.skills = ", ".join(parsed["skills"]) if isinstance(parsed["skills"], list) else str(parsed["skills"])
+                if parsed.get("experience_years"):
+                    c.experience_years = parsed["experience_years"]
+                if parsed.get("location"):
+                    c.location = parsed["location"]
+                if parsed.get("gender"):
+                    c.gender = parsed["gender"]
+                if parsed.get("shift_preference"):
+                    c.shift_preference = parsed["shift_preference"]
+                if parsed.get("age"):
+                    c.age = parsed["age"]
+                if parsed.get("is_remote") is not None:
+                    c.is_remote = parsed["is_remote"]
+                if parsed.get("summary"):
+                    c.summary = parsed["summary"][:2000]
+                parsed_count += 1
+            except Exception as e:
+                print(f"[parser-bot] Error parsing {c.name}: {e}")
+
+        db.commit()
+        if parsed_count:
+            notif = models.Notification(
+                message=f"Parser Bot: Extracted structured data from {parsed_count} candidates",
+                type="success",
+            )
+            db.add(notif)
+            db.commit()
+        print(f"[parser-bot] Cycle complete. Parsed {parsed_count} candidates")
+
+    except Exception as e:
+        print(f"[parser-bot] Fatal error: {e}")
+
+
+def _run_ranker_bot(db: Session):
+    try:
+        print("[ranker-bot] Starting ranking cycle...")
+        jd = db.query(models.JobDescription).order_by(models.JobDescription.created_at.desc()).first()
+        if not jd:
+            print("[ranker-bot] No job description found")
+            return
+        job_desc = jd.text
+
+        candidates = db.query(models.Candidate).filter(
+            models.Candidate.cv_text.isnot(None),
+            models.Candidate.cv_text != "",
+        ).all()
+
+        ranked_count = 0
+        for c in candidates:
+            try:
+                from .candidates import score_with_mistral
+                result = score_with_mistral(c.cv_text, job_desc)
+                score = int(result.get("score", 50))
+                c.match_score = score
+                c.summary = result.get("summary", c.summary or "")[:2000]
+                if result.get("skills"):
+                    c.skills = result["skills"]
+                if result.get("gender"):
+                    c.gender = result["gender"]
+                if result.get("shift_preference"):
+                    c.shift_preference = result["shift_preference"]
+                if result.get("age"):
+                    c.age = result["age"]
+                if result.get("experience_years"):
+                    c.experience_years = result["experience_years"]
+                c.current_stage = "Done"
+                c.status = "Screening"
+                ranked_count += 1
+            except Exception as e:
+                print(f"[ranker-bot] Error ranking {c.name}: {e}")
+
+        db.commit()
+        if ranked_count:
+            notif = models.Notification(
+                message=f"Ranker Bot: Scored {ranked_count} candidates against latest JD",
+                type="success",
+            )
+            db.add(notif)
+            db.commit()
+        print(f"[ranker-bot] Cycle complete. Ranked {ranked_count} candidates")
+
+    except Exception as e:
+        print(f"[ranker-bot] Fatal error: {e}")
 
 
 def _run_scheduler_bot(db: Session):
