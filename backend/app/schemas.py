@@ -206,6 +206,17 @@ class FetchResponse(BaseModel):
     fetch_time_ms: int
 
 
+class FetchStatusResponse(BaseModel):
+    fetch_id: str
+    status: str  # "processing" | "completed" | "error"
+    progress: int = 0
+    message: str = ""
+    candidates: list[FetchedCandidateOut] = []
+    total_fetched: int = 0
+    platform_breakdown: dict[str, int] = {}
+    fetch_time_ms: int = 0
+
+
 class PipelineRunCreate(BaseModel):
     job_title: str = ""
     job_description: str = ""

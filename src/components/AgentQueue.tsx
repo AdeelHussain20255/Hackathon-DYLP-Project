@@ -302,7 +302,7 @@ export default function AgentQueue({ items, onTriggerToast, onAdvanceStage, onPu
                         <div className="font-bold text-slate-900 group-hover:text-indigo-600 transition">
                           {item.candidateName}
                         </div>
-                        <div className="text-slate-400 text-[10px] mt-0.5">{item.role || item.fileName} • {item.email}</div>
+                        <div className="text-slate-400 text-[10px] mt-0.5">{item.stage} • {item.email}</div>
                       </div>
                     </div>
                   </td>

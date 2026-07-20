@@ -272,14 +272,23 @@ export const api = {
       max_results_per_source?: number;
     }) =>
       request<{
-        candidates: CandidateDTO[];
-        total_fetched: number;
-        platform_breakdown: Record<string, number>;
-        fetch_time_ms: number;
+        fetch_id: string;
+        status: string;
       }>("/api/candidates/fetch-from-boards", {
         method: "POST",
         body: JSON.stringify(data),
       }),
+    getStatus: (fetchId: string) =>
+      request<{
+        fetch_id: string;
+        status: string;
+        progress: number;
+        message: string;
+        candidates: CandidateDTO[];
+        total_fetched: number;
+        platform_breakdown: Record<string, number>;
+        fetch_time_ms: number;
+      }>(`/api/candidates/fetch-status/${fetchId}`),
   },
 
   diagnostics: {

@@ -2,7 +2,10 @@ import os
 import json
 import re
 import time
-from datetime import date
+import uuid
+import threading
+from datetime import date, datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pdfplumber
 import docx
@@ -10,7 +13,7 @@ import requests
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from .. import models, schemas
 from ..apify_scraper import (
     run_rozee_scraper,
@@ -22,6 +25,10 @@ from ..apify_scraper import (
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+
+# ── In-memory fetch job tracking for background fetch ────────────────────
+_fetch_jobs: dict[str, dict] = {}
+_fetch_jobs_lock = threading.Lock()
 
 
 def clean_name(raw: str) -> str:
@@ -175,6 +182,189 @@ def auto_email_best_candidates(db: Session):
         print(f"[auto-email] Error: {e}")
 
 
+# ── Background fetch with parallel Mistral scoring ────────────────────────
+
+def _run_fetch_background(job_id: str, payload: schemas.FetchRequest):
+    """Run the full fetch+scoring in background, updating _fetch_jobs dict."""
+    db = SessionLocal()
+    start_time = time.time()
+    try:
+        with _fetch_jobs_lock:
+            _fetch_jobs[job_id] = {"status": "processing", "progress": 0, "message": "Starting scrape..."}
+
+        all_candidates = []
+        platform_counts: dict[str, int] = {}
+        keyword = payload.job_title or payload.job_description[:50]
+        filters = payload.filters
+
+        with _fetch_jobs_lock:
+            _fetch_jobs[job_id] = {"status": "processing", "progress": 5, "message": "Scraping Rozee.pk..."}
+        try:
+            rozee_items = run_rozee_scraper(keyword, filters.location, payload.max_results_per_source)
+            print(f"[bg-fetch] Rozee returned {len(rozee_items)} items")
+            if rozee_items:
+                for item in rozee_items:
+                    cand = normalize_rozee_to_candidate(item, payload.job_description)
+                    all_candidates.append(cand)
+                platform_counts["Rozee.pk"] = len(rozee_items)
+        except Exception as e:
+            print(f"[bg-fetch] Rozee error: {e}")
+
+        with _fetch_jobs_lock:
+            _fetch_jobs[job_id] = {"status": "processing", "progress": 15, "message": "Searching LinkedIn..."}
+        try:
+            serp_items = run_linkedin_serp_search(keyword, filters.location, payload.max_results_per_source)
+            print(f"[bg-fetch] SerpAPI returned {len(serp_items)} items")
+            if serp_items:
+                for item in serp_items:
+                    cand = normalize_serp_to_candidate(item, payload.job_description)
+                    all_candidates.append(cand)
+                platform_counts["LinkedIn (Google)"] = len(serp_items)
+        except Exception as e:
+            print(f"[bg-fetch] SerpAPI error: {e}")
+
+        # Parallel name fix + scoring via Mistral
+        total = len(all_candidates)
+        if total == 0:
+            with _fetch_jobs_lock:
+                _fetch_jobs[job_id] = {"status": "completed", "progress": 100, "message": "No candidates found", "candidates": [], "total_fetched": 0, "platform_breakdown": platform_counts, "fetch_time_ms": int((time.time() - start_time) * 1000)}
+            return
+
+        with _fetch_jobs_lock:
+            _fetch_jobs[job_id] = {"status": "processing", "progress": 20, "message": f"Scoring {total} candidates with AI..."}
+
+        scored = [None] * total
+        done_count = 0
+
+        def score_one(idx: int, cand: dict) -> tuple[int, dict]:
+            cv_text = cand.get("cv_text", "")
+            raw_name = cand.get("name", "")
+            # fix name for scraped candidates
+            if ("Candidate - " in raw_name or "@linkedin.com" in raw_name) and cv_text and MISTRAL_API_KEY:
+                fixed = fix_scraped_name_with_mistral(raw_name, cv_text, payload.job_description)
+                if fixed != raw_name:
+                    cand["name"] = clean_name(fixed)
+            # run score
+            if cv_text and MISTRAL_API_KEY:
+                try:
+                    result = score_with_mistral(cv_text, payload.job_description)
+                    cand["match_score"] = int(result.get("score", 50))
+                    cand["summary"] = result.get("summary", cand.get("summary", ""))
+                    name = result.get("name", "")
+                    if name and len(name) > 3 and "Candidate" not in name:
+                        cand["name"] = clean_name(name)
+                    cand["email"] = result.get("email", cand.get("email", ""))
+                    if result.get("gender"):       cand["gender"] = cand["gender"] or result["gender"]
+                    if result.get("shift_preference"): cand["shift_preference"] = result.get("shift_preference", cand.get("shift_preference"))
+                    if result.get("age"):           cand["age"] = cand["age"] or result["age"]
+                    if result.get("is_remote") is not None: cand["is_remote"] = result["is_remote"]
+                    if result.get("skills"):        cand["skills"] = result["skills"]
+                    if result.get("experience_years"): cand["experience_years"] = cand["experience_years"] or result["experience_years"]
+                except Exception:
+                    cand["match_score"] = 50
+            else:
+                cand["match_score"] = 50
+            return idx, cand
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = [pool.submit(score_one, i, cand) for i, cand in enumerate(all_candidates)]
+            for f in as_completed(futures):
+                idx, cand = f.result()
+                scored[idx] = cand
+                done_count += 1
+                pct = 20 + int(done_count / total * 50)
+                with _fetch_jobs_lock:
+                    _fetch_jobs[job_id] = {"status": "processing", "progress": min(pct, 70), "message": f"Scored {done_count}/{total} candidates..."}
+
+        # Apply filters
+        filtered = []
+        for cand in scored:
+            if cand is None: continue
+            if filters.gender and cand.get("gender") and cand["gender"].lower() != filters.gender.lower(): continue
+            if filters.shift and cand.get("shift_preference") and cand["shift_preference"].lower() != filters.shift.lower(): continue
+            if filters.remote is not None and cand.get("is_remote") is not None and cand["is_remote"] != filters.remote: continue
+            if filters.age_min and cand.get("age") and cand["age"] < filters.age_min: continue
+            if filters.age_max and cand.get("age") and cand["age"] > filters.age_max: continue
+            if filters.experience_min is not None and cand.get("experience_years") is not None and cand["experience_years"] < filters.experience_min: continue
+            if filters.experience_max is not None and cand.get("experience_years") is not None and cand["experience_years"] > filters.experience_max: continue
+            if filters.location and cand.get("location") and filters.location.lower() not in cand["location"].lower(): continue
+            filtered.append(cand)
+
+        with _fetch_jobs_lock:
+            _fetch_jobs[job_id] = {"status": "processing", "progress": 75, "message": f"Saving {len(filtered)} candidates to database..."}
+
+        # Save to DB
+        saved = []
+        for cand in filtered:
+            candidate = models.Candidate(
+                name=cand.get("name", "Unknown")[:100],
+                email=cand.get("email", "unknown@example.com")[:200],
+                role=cand.get("role", "Professional")[:100],
+                department=cand.get("department", "Engineering")[:100],
+                applied_date=date.today().isoformat(),
+                match_score=cand.get("match_score"),
+                status=cand.get("status", "Screening"),
+                current_stage=cand.get("current_stage", "Awaiting Ranking"),
+                summary=cand.get("summary", "")[:1000] if cand.get("summary") else None,
+                cv_text=cand.get("cv_text"),
+                gender=cand.get("gender"),
+                shift_preference=cand.get("shift_preference"),
+                age=cand.get("age"),
+                source_platform=cand.get("source_platform"),
+                is_remote=cand.get("is_remote"),
+                location=cand.get("location"),
+                skills=cand.get("skills"),
+                experience_years=cand.get("experience_years"),
+                phone=cand.get("phone"),
+            )
+            db.add(candidate)
+        db.commit()
+        # Refresh to get IDs
+        for cand in filtered:
+            saved_candidate = db.query(models.Candidate).filter(models.Candidate.email == cand.get("email", "")).order_by(models.Candidate.created_at.desc()).first()
+            if saved_candidate:
+                saved.append(saved_candidate)
+
+        with _fetch_jobs_lock:
+            _fetch_jobs[job_id] = {"status": "processing", "progress": 90, "message": "Starting automatic pipeline..."}
+
+        # Run auto pipeline in background (don't wait)
+        try:
+            from .pipeline import _background_run_pipeline
+            cids = [c.id for c in saved]
+            if cids:
+                auto_run_id = str(uuid.uuid4())
+                auto_run = models.PipelineRun(
+                    id=auto_run_id, job_title=payload.job_title or "Auto Pipeline",
+                    job_description=payload.job_description, status="running",
+                    created_at=datetime.now(),
+                )
+                db.add(auto_run)
+                db.commit()
+                t = threading.Thread(target=_background_run_pipeline, args=(auto_run_id, cids, payload.job_title or "Auto Pipeline", payload.job_description), daemon=True)
+                t.start()
+        except Exception as e:
+            print(f"[bg-fetch] Auto pipeline error: {e}")
+
+        elapsed = int((time.time() - start_time) * 1000)
+        with _fetch_jobs_lock:
+            _fetch_jobs[job_id] = {
+                "status": "completed", "progress": 100,
+                "message": f"Fetched {len(saved)} candidates in {elapsed}ms",
+                "candidates": [schemas.FetchedCandidateOut.model_validate(c) for c in saved],
+                "total_fetched": len(saved),
+                "platform_breakdown": platform_counts,
+                "fetch_time_ms": elapsed,
+            }
+
+    except Exception as e:
+        print(f"[bg-fetch] Fatal error: {e}")
+        with _fetch_jobs_lock:
+            _fetch_jobs[job_id] = {"status": "error", "progress": 0, "message": str(e), "candidates": [], "total_fetched": 0, "platform_breakdown": {}, "fetch_time_ms": 0}
+    finally:
+        db.close()
+
+
 @router.post("/batch-analyze", response_model=schemas.BatchAnalyzeResponse)
 async def batch_analyze_cvs(
     files: list[UploadFile] = File(...),
@@ -267,133 +457,26 @@ Respond with ONLY valid JSON in this exact structure:
     return schemas.BatchAnalyzeResponse(candidates=results, total_processed=len(results))
 
 
-@router.post("/fetch-from-boards", response_model=schemas.FetchResponse)
-def fetch_from_job_boards(payload: schemas.FetchRequest, db: Session = Depends(get_db)):
-    start_time = time.time()
-    all_candidates = []
-    platform_counts = {"Rozee.pk": 0}
+@router.post("/fetch-from-boards")
+def fetch_from_job_boards(payload: schemas.FetchRequest):
+    """Start a background fetch and return immediately with a fetch_id for polling."""
+    job_id = str(uuid.uuid4())
+    with _fetch_jobs_lock:
+        _fetch_jobs[job_id] = {"status": "processing", "progress": 0, "message": "Starting...", "candidates": [], "total_fetched": 0, "platform_breakdown": {}, "fetch_time_ms": 0}
 
-    keyword = payload.job_title or payload.job_description[:50]
-    filters = payload.filters
+    t = threading.Thread(target=_run_fetch_background, args=(job_id, payload), daemon=True)
+    t.start()
 
-    try:
-        rozee_items = run_rozee_scraper(keyword, filters.location, payload.max_results_per_source)
-        print(f"[fetch-from-boards] Rozee returned {len(rozee_items)} items")
-        if rozee_items:
-            for item in rozee_items:
-                cand = normalize_rozee_to_candidate(item, payload.job_description)
-                cand["name"] = clean_name(fix_scraped_name_with_mistral(
-                    cand.get("name", ""), json.dumps(item), payload.job_description
-                ))
-                email = cand.get("email", "")
-                if "candidate." in email or "@example" in email:
-                    cand["email"] = f"{cand['name'].lower().replace(' ', '.').replace('-','')}@professional.email"
-                all_candidates.append(cand)
-            platform_counts["Rozee.pk"] = len(rozee_items)
-    except Exception as e:
-        print(f"[fetch-from-boards] Rozee scraper error: {e}")
-
-    try:
-        serp_items = run_linkedin_serp_search(keyword, filters.location, payload.max_results_per_source)
-        print(f"[fetch-from-boards] SerpAPI LinkedIn returned {len(serp_items)} items")
-        if serp_items:
-            for item in serp_items:
-                cand = normalize_serp_to_candidate(item, payload.job_description)
-                all_candidates.append(cand)
-            platform_counts["LinkedIn (Google)"] = len(serp_items)
-    except Exception as e:
-        print(f"[fetch-from-boards] SerpAPI error: {e}")
+    return {"fetch_id": job_id, "status": "processing"}
 
 
-    scored_candidates = []
-    for cand in all_candidates:
-        cv_text = cand.get("cv_text", "")
-        if cv_text and MISTRAL_API_KEY:
-            try:
-                result = score_with_mistral(cv_text, payload.job_description)
-                cand["match_score"] = int(result.get("score", 50))
-                cand["summary"] = result.get("summary", cand.get("summary", ""))
-                name = result.get("name", "")
-                if name and len(name) > 3 and "Candidate" not in name:
-                    cand["name"] = clean_name(name)
-                cand["email"] = result.get("email", cand.get("email", ""))
-                if result.get("gender"):
-                    cand["gender"] = cand["gender"] or result["gender"]
-                if result.get("shift_preference"):
-                    cand["shift_preference"] = result.get("shift_preference", cand.get("shift_preference"))
-                if result.get("age"):
-                    cand["age"] = cand["age"] or result["age"]
-                if result.get("is_remote") is not None:
-                    cand["is_remote"] = result["is_remote"]
-                if result.get("skills"):
-                    cand["skills"] = result["skills"]
-                if result.get("experience_years"):
-                    cand["experience_years"] = cand["experience_years"] or result["experience_years"]
-            except Exception:
-                cand["match_score"] = 50
-        else:
-            cand["match_score"] = 50
-
-    filtered = []
-    for cand in all_candidates:
-        if filters.gender and cand.get("gender") and cand["gender"].lower() != filters.gender.lower():
-            continue
-        if filters.shift and cand.get("shift_preference") and cand["shift_preference"].lower() != filters.shift.lower():
-            continue
-        if filters.remote is not None and cand.get("is_remote") is not None and cand["is_remote"] != filters.remote:
-            continue
-        if filters.age_min and cand.get("age") and cand["age"] < filters.age_min:
-            continue
-        if filters.age_max and cand.get("age") and cand["age"] > filters.age_max:
-            continue
-        if filters.experience_min is not None and cand.get("experience_years") is not None and cand["experience_years"] < filters.experience_min:
-            continue
-        if filters.experience_max is not None and cand.get("experience_years") is not None and cand["experience_years"] > filters.experience_max:
-            continue
-        if filters.location and cand.get("location") and filters.location.lower() not in cand["location"].lower():
-            continue
-        filtered.append(cand)
-
-    saved_candidates = []
-    for cand in filtered:
-        candidate = models.Candidate(
-            name=cand.get("name", "Unknown")[:100],
-            email=cand.get("email", "unknown@example.com")[:200],
-            role=cand.get("role", "Professional")[:100],
-            department=cand.get("department", "Engineering")[:100],
-            applied_date=date.today().isoformat(),
-            match_score=cand.get("match_score"),
-            status=cand.get("status", "Screening"),
-            current_stage=cand.get("current_stage", "Awaiting Ranking"),
-            summary=cand.get("summary", "")[:1000] if cand.get("summary") else None,
-            cv_text=cand.get("cv_text"),
-            gender=cand.get("gender"),
-            shift_preference=cand.get("shift_preference"),
-            age=cand.get("age"),
-            source_platform=cand.get("source_platform"),
-            is_remote=cand.get("is_remote"),
-            location=cand.get("location"),
-            skills=cand.get("skills"),
-            experience_years=cand.get("experience_years"),
-            phone=cand.get("phone"),
-        )
-        db.add(candidate)
-        db.commit()
-        db.refresh(candidate)
-        saved_candidates.append(candidate)
-
-    if saved_candidates:
-        auto_pipeline_after_fetch(db)
-        auto_email_best_candidates(db)
-
-    elapsed = int((time.time() - start_time) * 1000)
-
-    return schemas.FetchResponse(
-        candidates=[schemas.FetchedCandidateOut.model_validate(c) for c in saved_candidates],
-        total_fetched=len(saved_candidates),
-        platform_breakdown=platform_counts,
-        fetch_time_ms=elapsed,
-    )
+@router.get("/fetch-status/{fetch_id}", response_model=schemas.FetchStatusResponse)
+def get_fetch_status(fetch_id: str):
+    with _fetch_jobs_lock:
+        job = _fetch_jobs.get(fetch_id)
+    if not job:
+        raise HTTPException(404, "Fetch job not found")
+    return schemas.FetchStatusResponse(fetch_id=fetch_id, **job)
 
 
 @router.get("", response_model=list[schemas.CandidateOut])

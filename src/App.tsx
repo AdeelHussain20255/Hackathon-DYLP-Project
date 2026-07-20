@@ -273,19 +273,35 @@ Required Skills:
           experience_max: f.experienceMax ? parseInt(f.experienceMax) : undefined,
         },
       });
-      setFetchedCandidates(result.candidates);
-      setFetchPlatformBreakdown(result.platform_breakdown);
-      setFetchTimeMs(result.fetch_time_ms);
-      if (result.candidates.length > 0) {
-        showToast(`Found ${result.total_fetched} candidates from boards in ${result.fetch_time_ms}ms!`);
-        await useAppStore.getState().fetchCandidates();
-      } else {
-        showToast("No candidates matched your filters. Try broader criteria.");
-      }
+      // Poll for completion
+      const poll = async (): Promise<void> => {
+        const status = await api.fetchCandidates.getStatus(result.fetch_id);
+        if (status.status === "completed") {
+          setFetchedCandidates(status.candidates || []);
+          setFetchPlatformBreakdown(status.platform_breakdown);
+          setFetchTimeMs(status.fetch_time_ms);
+          if (status.total_fetched > 0) {
+            showToast(`Found ${status.total_fetched} candidates ${status.fetch_time_ms > 0 ? `in ${status.fetch_time_ms}ms` : ""}!`);
+            await useAppStore.getState().fetchCandidates();
+          } else {
+            showToast("No candidates matched your filters. Try broader criteria.");
+          }
+          setIsFetchingFromBoards(false);
+          return;
+        }
+        if (status.status === "error") {
+          showToast(`Fetch failed: ${status.message}`);
+          setIsFetchingFromBoards(false);
+          return;
+        }
+        // Still processing — retry after 2s
+        setTimeout(poll, 2000);
+      };
+      await poll();
     } catch (e: any) {
       showToast(`Fetch failed: ${e.message || e}`);
+      setIsFetchingFromBoards(false);
     }
-    setIsFetchingFromBoards(false);
   };
 
   const handleSaveJd = async () => {
